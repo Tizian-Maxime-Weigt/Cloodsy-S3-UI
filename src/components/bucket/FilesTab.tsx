@@ -99,6 +99,7 @@ export function FilesTab({ bucketName }: { bucketName: string }) {
     fetchBucketDetail,
     deleteObject,
     deletePrefix,
+    setLivePrefix,
   } = useBuckets()
   const { api } = useAuth()
   const { activeServer } = useServers()
@@ -146,10 +147,20 @@ export function FilesTab({ bucketName }: { bucketName: string }) {
   }, [bucketName, fetchObjects, prefix])
 
   useEffect(() => {
+    setPrefix('')
+    setSelected(new Set())
+  }, [bucketName])
+
+  useEffect(() => {
     void fetchObjects(bucketName, prefix)
     setSelected(new Set())
     setMenuKey(null)
   }, [bucketName, prefix, fetchObjects])
+
+  useEffect(() => {
+    setLivePrefix(prefix)
+    return () => setLivePrefix('')
+  }, [prefix, setLivePrefix])
 
   useEffect(() => {
     void fetchCredentials(bucketName)

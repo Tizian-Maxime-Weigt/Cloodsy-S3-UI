@@ -75,9 +75,21 @@ export function DashboardScreen({
 
       <div className="page">
         <div className="page-header">
-          <h1>Dashboard</h1>
+          <div>
+            <h1>Dashboard</h1>
+            <p className="page-header__sub">
+              Bucket stats and settings stay in sync automatically.
+            </p>
+          </div>
           <div className="spacer" />
-          <Button variant="outline" size="sm" onClick={() => void fetchBuckets()}>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              void fetchBuckets()
+              void fetchStatus()
+            }}
+          >
             <RefreshCw size={14} />
             Refresh
           </Button>

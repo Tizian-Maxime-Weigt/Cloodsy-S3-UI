@@ -2,12 +2,18 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from 'react'
 import { ApiException } from '../api/client'
+import { LiveClient } from '../api/live'
 import {
+  bucketFingerprint,
+  bucketsFingerprint,
+  mergeBucket,
   parseAdmin,
   parseBucket,
   parseCredential,
@@ -15,8 +21,17 @@ import {
   parseObjectList,
   parseServerStatus,
   parseWebhook,
+  statusFingerprint,
 } from '../api/parsers'
 import { compareVersions } from '../lib/format'
+import {
+  liveBucketName,
+  liveMessageType,
+  livePayload,
+  liveStringList,
+  type LiveFocus,
+  type LiveMode,
+} from '../lib/live'
 import type {
   AdminUser,
   Bucket,
@@ -27,6 +42,8 @@ import type {
   Webhook,
 } from '../types'
 import { useAuth } from './auth'
+
+export type SilentFetch = { silent?: boolean }
 
 interface BucketStoreValue {
   buckets: Bucket[]
@@ -43,10 +60,14 @@ interface BucketStoreValue {
   objectList: ObjectListResult | null
   objectsLoading: boolean
   admins: AdminUser[]
+  liveMode: LiveMode
+  lastSyncedAt: number | null
+  setLiveFocus: (focus: LiveFocus | null) => void
+  setLivePrefix: (prefix: string) => void
   clearError: () => void
-  fetchStatus: () => Promise<void>
-  fetchBuckets: () => Promise<void>
-  fetchBucketDetail: (name: string) => Promise<void>
+  fetchStatus: (opts?: SilentFetch) => Promise<void>
+  fetchBuckets: (opts?: SilentFetch) => Promise<void>
+  fetchBucketDetail: (name: string, opts?: SilentFetch) => Promise<void>
   createBucket: (name: string, storageDir?: string) => Promise<boolean>
   deleteBucket: (name: string) => Promise<boolean>
   setQuota: (name: string, quotaBytes: number) => Promise<boolean>
@@ -55,14 +76,14 @@ interface BucketStoreValue {
   setPublicRead: (name: string, enabled: boolean) => Promise<boolean>
   setWebdavEnabled: (name: string, enabled: boolean) => Promise<boolean>
   reprocessImages: (name: string) => Promise<boolean>
-  fetchCredentials: (bucketName: string) => Promise<void>
+  fetchCredentials: (bucketName: string, opts?: SilentFetch) => Promise<void>
   createCredential: (
     bucketName: string,
     name: string,
     permission: string,
   ) => Promise<Credential | null>
   deleteCredential: (accessKey: string, bucketName: string) => Promise<boolean>
-  fetchLifecycleRules: (bucketName: string) => Promise<void>
+  fetchLifecycleRules: (bucketName: string, opts?: SilentFetch) => Promise<void>
   addLifecycleRule: (
     bucketName: string,
     name: string,
@@ -70,7 +91,7 @@ interface BucketStoreValue {
     days: number,
   ) => Promise<boolean>
   deleteLifecycleRules: (bucketName: string, prefix?: string) => Promise<boolean>
-  fetchWebhooks: (bucketName: string) => Promise<void>
+  fetchWebhooks: (bucketName: string, opts?: SilentFetch) => Promise<void>
   addWebhook: (
     bucketName: string,
     name: string,
@@ -83,10 +104,11 @@ interface BucketStoreValue {
     bucketName: string,
     prefix?: string,
     marker?: string,
+    opts?: SilentFetch,
   ) => Promise<void>
   deleteObject: (bucketName: string, key: string) => Promise<boolean>
   deletePrefix: (bucketName: string, prefix: string) => Promise<boolean>
-  fetchAdmins: () => Promise<void>
+  fetchAdmins: (opts?: SilentFetch) => Promise<void>
   createAdmin: (
     username: string,
     password: string,
@@ -102,8 +124,12 @@ const BucketStoreContext = createContext<BucketStoreValue | null>(null)
 
 const GITHUB_REPO = 'onaonbir/Cloodsy-S3'
 
+function replaceIfChanged(prev: Bucket[], next: Bucket[]): Bucket[] {
+  return bucketsFingerprint(prev) === bucketsFingerprint(next) ? prev : next
+}
+
 export function BucketStoreProvider({ children }: { children: ReactNode }) {
-  const { api } = useAuth()
+  const { api, token, isLoggedIn } = useAuth()
 
   const [buckets, setBuckets] = useState<Bucket[]>([])
   const [isLoading, setIsLoading] = useState(false)
@@ -117,8 +143,78 @@ export function BucketStoreProvider({ children }: { children: ReactNode }) {
   const [objectList, setObjectList] = useState<ObjectListResult | null>(null)
   const [objectsLoading, setObjectsLoading] = useState(false)
   const [admins, setAdmins] = useState<AdminUser[]>([])
+  const [liveMode, setLiveMode] = useState<LiveMode>('idle')
+  const [lastSyncedAt, setLastSyncedAt] = useState<number | null>(null)
+  const [liveFocus, setLiveFocusState] = useState<LiveFocus | null>(null)
+
+  const liveFocusRef = useRef<LiveFocus | null>(null)
+  const liveClientRef = useRef<LiveClient | null>(null)
+  const objectsGen = useRef(0)
+  const objectsPaged = useRef(false)
+  const selectedNameRef = useRef<string | null>(null)
+
+  liveFocusRef.current = liveFocus
 
   const clearError = useCallback(() => setError(null), [])
+  const touchSync = useCallback(() => setLastSyncedAt(Date.now()), [])
+
+  const setLiveFocus = useCallback((focus: LiveFocus | null) => {
+    liveFocusRef.current = focus
+    setLiveFocusState(focus)
+    liveClientRef.current?.setFocus(focus)
+  }, [])
+
+  const setLivePrefix = useCallback((prefix: string) => {
+    setLiveFocusState((prev) => {
+      if (!prev) return prev
+      if (prev.prefix === prefix) return prev
+      const next = { ...prev, prefix }
+      liveFocusRef.current = next
+      liveClientRef.current?.setFocus(next)
+      return next
+    })
+  }, [])
+
+  const patchBucket = useCallback((name: string, patch: Partial<Bucket>) => {
+    setSelectedBucket((prev) => {
+      if (!prev || prev.name !== name) return prev
+      const next = { ...prev, ...patch }
+      return bucketFingerprint(prev) === bucketFingerprint(next) ? prev : next
+    })
+    setBuckets((prev) =>
+      prev.map((b) => (b.name === name ? { ...b, ...patch } : b)),
+    )
+  }, [])
+
+  const applyBucketList = useCallback((list: Bucket[]) => {
+    setBuckets((prev) => replaceIfChanged(prev, list))
+    setSelectedBucket((prev) => {
+      if (!prev) return prev
+      const found = list.find((b) => b.name === prev.name)
+      if (!found) return prev
+      const next = { ...prev, ...found }
+      return bucketFingerprint(prev) === bucketFingerprint(next) ? prev : next
+    })
+  }, [])
+
+  const applyBucket = useCallback((json: Record<string, unknown>, nameHint?: string) => {
+    const name = String(json.name ?? nameHint ?? '').trim()
+    if (!name) return
+    setSelectedBucket((prev) => {
+      if (prev && prev.name !== name) return prev
+      const next = mergeBucket(prev ?? undefined, { ...json, name })
+      if (prev && bucketFingerprint(prev) === bucketFingerprint(next)) return prev
+      return next
+    })
+    setBuckets((prev) => {
+      const current = prev.find((b) => b.name === name)
+      const nextItem = mergeBucket(current, { ...json, name })
+      if (current) {
+        return prev.map((b) => (b.name === name ? nextItem : b))
+      }
+      return [...prev, nextItem]
+    })
+  }, [])
 
   const checkLatestVersion = useCallback(async () => {
     try {
@@ -136,43 +232,61 @@ export function BucketStoreProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
-  const fetchStatus = useCallback(async () => {
-    try {
-      const data = await api.get('/status')
-      setServerStatus(parseServerStatus(data))
-      void checkLatestVersion()
-    } catch {
-      /* ignore */
-    }
-  }, [api, checkLatestVersion])
-
-  const fetchBuckets = useCallback(async () => {
-    setIsLoading(true)
-    setError(null)
-    try {
-      const data = await api.get('/buckets')
-      const list = (data.buckets as Record<string, unknown>[]) ?? []
-      setBuckets(list.map(parseBucket))
-    } catch (e) {
-      if (e instanceof ApiException) setError(e.message)
-    } finally {
-      setIsLoading(false)
-    }
-  }, [api])
-
-  const fetchBucketDetail = useCallback(
-    async (name: string) => {
-      setIsLoading(true)
+  const fetchStatus = useCallback(
+    async (opts?: SilentFetch) => {
       try {
-        const data = await api.get(`/buckets/${encodeURIComponent(name)}`)
-        setSelectedBucket(parseBucket(data))
-      } catch (e) {
-        if (e instanceof ApiException) setError(e.message)
-      } finally {
-        setIsLoading(false)
+        const data = await api.get('/status')
+        const parsed = parseServerStatus(data)
+        setServerStatus((prev) =>
+          statusFingerprint(prev) === statusFingerprint(parsed) ? prev : parsed,
+        )
+        touchSync()
+        if (!opts?.silent) void checkLatestVersion()
+      } catch {
+        /* ignore */
       }
     },
-    [api],
+    [api, checkLatestVersion, touchSync],
+  )
+
+  const fetchBuckets = useCallback(
+    async (opts?: SilentFetch) => {
+      if (!opts?.silent) {
+        setIsLoading(true)
+        setError(null)
+      }
+      try {
+        const data = await api.get('/buckets')
+        const list = ((data.buckets as Record<string, unknown>[]) ?? []).map(
+          parseBucket,
+        )
+        applyBucketList(list)
+        touchSync()
+      } catch (e) {
+        if (!opts?.silent && e instanceof ApiException) setError(e.message)
+      } finally {
+        if (!opts?.silent) setIsLoading(false)
+      }
+    },
+    [api, applyBucketList, touchSync],
+  )
+
+  const fetchBucketDetail = useCallback(
+    async (name: string, opts?: SilentFetch) => {
+      selectedNameRef.current = name
+      if (!opts?.silent) setIsLoading(true)
+      try {
+        const data = await api.get(`/buckets/${encodeURIComponent(name)}`)
+        if (selectedNameRef.current !== name) return
+        applyBucket(data, name)
+        touchSync()
+      } catch (e) {
+        if (!opts?.silent && e instanceof ApiException) setError(e.message)
+      } finally {
+        if (!opts?.silent) setIsLoading(false)
+      }
+    },
+    [api, applyBucket, touchSync],
   )
 
   const createBucket = useCallback(
@@ -181,7 +295,7 @@ export function BucketStoreProvider({ children }: { children: ReactNode }) {
         const body: Record<string, unknown> = { name }
         if (storageDir) body.storage_dir = storageDir
         await api.post('/buckets', body)
-        await fetchBuckets()
+        await fetchBuckets({ silent: true })
         return true
       } catch (e) {
         if (e instanceof ApiException) setError(e.message)
@@ -196,6 +310,7 @@ export function BucketStoreProvider({ children }: { children: ReactNode }) {
       try {
         await api.delete(`/buckets/${encodeURIComponent(name)}`)
         setBuckets((prev) => prev.filter((b) => b.name !== name))
+        setSelectedBucket((prev) => (prev?.name === name ? null : prev))
         return true
       } catch (e) {
         if (e instanceof ApiException) setError(e.message)
@@ -211,14 +326,15 @@ export function BucketStoreProvider({ children }: { children: ReactNode }) {
         await api.put(`/buckets/${encodeURIComponent(name)}/quota`, {
           quota_bytes: quotaBytes,
         })
-        await fetchBucketDetail(name)
+        patchBucket(name, { quotaBytes })
+        void fetchBucketDetail(name, { silent: true })
         return true
       } catch (e) {
         if (e instanceof ApiException) setError(e.message)
         return false
       }
     },
-    [api, fetchBucketDetail],
+    [api, fetchBucketDetail, patchBucket],
   )
 
   const setStorage = useCallback(
@@ -227,14 +343,15 @@ export function BucketStoreProvider({ children }: { children: ReactNode }) {
         await api.put(`/buckets/${encodeURIComponent(name)}/storage`, {
           storage_dir: storageDir,
         })
-        await fetchBucketDetail(name)
+        patchBucket(name, { storageDir, storagePath: storageDir || null })
+        void fetchBucketDetail(name, { silent: true })
         return true
       } catch (e) {
         if (e instanceof ApiException) setError(e.message)
         return false
       }
     },
-    [api, fetchBucketDetail],
+    [api, fetchBucketDetail, patchBucket],
   )
 
   const setVersioning = useCallback(
@@ -243,14 +360,15 @@ export function BucketStoreProvider({ children }: { children: ReactNode }) {
         await api.put(`/buckets/${encodeURIComponent(name)}/versioning`, {
           versioning: state,
         })
-        await fetchBucketDetail(name)
+        patchBucket(name, { versioning: state })
+        void fetchBucketDetail(name, { silent: true })
         return true
       } catch (e) {
         if (e instanceof ApiException) setError(e.message)
         return false
       }
     },
-    [api, fetchBucketDetail],
+    [api, fetchBucketDetail, patchBucket],
   )
 
   const setPublicRead = useCallback(
@@ -259,14 +377,15 @@ export function BucketStoreProvider({ children }: { children: ReactNode }) {
         await api.put(`/buckets/${encodeURIComponent(name)}/public-read`, {
           public_read: enabled,
         })
-        await fetchBucketDetail(name)
+        patchBucket(name, { publicRead: enabled })
+        void fetchBucketDetail(name, { silent: true })
         return true
       } catch (e) {
         if (e instanceof ApiException) setError(e.message)
         return false
       }
     },
-    [api, fetchBucketDetail],
+    [api, fetchBucketDetail, patchBucket],
   )
 
   const setWebdavEnabled = useCallback(
@@ -275,14 +394,15 @@ export function BucketStoreProvider({ children }: { children: ReactNode }) {
         await api.put(`/buckets/${encodeURIComponent(name)}/webdav`, {
           webdav_enabled: enabled,
         })
-        await fetchBucketDetail(name)
+        patchBucket(name, { webdavEnabled: enabled })
+        void fetchBucketDetail(name, { silent: true })
         return true
       } catch (e) {
         if (e instanceof ApiException) setError(e.message)
         return false
       }
     },
-    [api, fetchBucketDetail],
+    [api, fetchBucketDetail, patchBucket],
   )
 
   const reprocessImages = useCallback(
@@ -299,18 +419,19 @@ export function BucketStoreProvider({ children }: { children: ReactNode }) {
   )
 
   const fetchCredentials = useCallback(
-    async (bucketName: string) => {
+    async (bucketName: string, opts?: SilentFetch) => {
       try {
         const data = await api.get(
           `/buckets/${encodeURIComponent(bucketName)}/credentials`,
         )
         const list = (data.credentials as Record<string, unknown>[]) ?? []
         setCredentials(list.map(parseCredential))
+        touchSync()
       } catch (e) {
-        if (e instanceof ApiException) setError(e.message)
+        if (!opts?.silent && e instanceof ApiException) setError(e.message)
       }
     },
-    [api],
+    [api, touchSync],
   )
 
   const createCredential = useCallback(
@@ -322,6 +443,16 @@ export function BucketStoreProvider({ children }: { children: ReactNode }) {
         )
         const cred = parseCredential(data)
         await fetchCredentials(bucketName)
+        setBuckets((prev) =>
+          prev.map((b) =>
+            b.name === bucketName ? { ...b, credentials: b.credentials + 1 } : b,
+          ),
+        )
+        setSelectedBucket((prev) =>
+          prev?.name === bucketName
+            ? { ...prev, credentials: prev.credentials + 1 }
+            : prev,
+        )
         return cred
       } catch (e) {
         if (e instanceof ApiException) setError(e.message)
@@ -336,6 +467,18 @@ export function BucketStoreProvider({ children }: { children: ReactNode }) {
       try {
         await api.delete(`/credentials/${encodeURIComponent(accessKey)}`)
         await fetchCredentials(bucketName)
+        setBuckets((prev) =>
+          prev.map((b) =>
+            b.name === bucketName
+              ? { ...b, credentials: Math.max(0, b.credentials - 1) }
+              : b,
+          ),
+        )
+        setSelectedBucket((prev) =>
+          prev?.name === bucketName
+            ? { ...prev, credentials: Math.max(0, prev.credentials - 1) }
+            : prev,
+        )
         return true
       } catch (e) {
         if (e instanceof ApiException) setError(e.message)
@@ -346,18 +489,19 @@ export function BucketStoreProvider({ children }: { children: ReactNode }) {
   )
 
   const fetchLifecycleRules = useCallback(
-    async (bucketName: string) => {
+    async (bucketName: string, opts?: SilentFetch) => {
       try {
         const data = await api.get(
           `/buckets/${encodeURIComponent(bucketName)}/lifecycle`,
         )
         const list = (data.rules as Record<string, unknown>[]) ?? []
         setLifecycleRules(list.map(parseLifecycleRule))
+        touchSync()
       } catch (e) {
-        if (e instanceof ApiException) setError(e.message)
+        if (!opts?.silent && e instanceof ApiException) setError(e.message)
       }
     },
-    [api],
+    [api, touchSync],
   )
 
   const addLifecycleRule = useCallback(
@@ -397,18 +541,19 @@ export function BucketStoreProvider({ children }: { children: ReactNode }) {
   )
 
   const fetchWebhooks = useCallback(
-    async (bucketName: string) => {
+    async (bucketName: string, opts?: SilentFetch) => {
       try {
         const data = await api.get(
           `/buckets/${encodeURIComponent(bucketName)}/webhooks`,
         )
         const list = (data.webhooks as Record<string, unknown>[]) ?? []
         setWebhooks(list.map(parseWebhook))
+        touchSync()
       } catch (e) {
-        if (e instanceof ApiException) setError(e.message)
+        if (!opts?.silent && e instanceof ApiException) setError(e.message)
       }
     },
-    [api],
+    [api, touchSync],
   )
 
   const addWebhook = useCallback(
@@ -451,8 +596,15 @@ export function BucketStoreProvider({ children }: { children: ReactNode }) {
   )
 
   const fetchObjects = useCallback(
-    async (bucketName: string, prefix = '', marker = '') => {
-      setObjectsLoading(true)
+    async (
+      bucketName: string,
+      prefix = '',
+      marker = '',
+      opts?: SilentFetch,
+    ) => {
+      if (opts?.silent && objectsPaged.current && marker === '') return
+      const gen = opts?.silent ? objectsGen.current : ++objectsGen.current
+      if (!opts?.silent) setObjectsLoading(true)
       try {
         const params = new URLSearchParams({
           prefix,
@@ -463,9 +615,14 @@ export function BucketStoreProvider({ children }: { children: ReactNode }) {
         const data = await api.get(
           `/buckets/${encodeURIComponent(bucketName)}/objects?${params}`,
         )
+        if (gen !== objectsGen.current) return
         const parsed = parseObjectList(data)
         setObjectList((prev) => {
-          if (!marker || !prev || prev.prefix !== prefix) return parsed
+          if (!marker || !prev || prev.prefix !== prefix) {
+            objectsPaged.current = Boolean(parsed.truncated)
+            return parsed
+          }
+          objectsPaged.current = true
           const seenObj = new Set(prev.objects.map((o) => o.key))
           const seenPref = new Set(prev.prefixes)
           return {
@@ -480,13 +637,14 @@ export function BucketStoreProvider({ children }: { children: ReactNode }) {
             ],
           }
         })
+        touchSync()
       } catch (e) {
-        if (e instanceof ApiException) setError(e.message)
+        if (!opts?.silent && e instanceof ApiException) setError(e.message)
       } finally {
-        setObjectsLoading(false)
+        if (!opts?.silent && gen === objectsGen.current) setObjectsLoading(false)
       }
     },
-    [api],
+    [api, touchSync],
   )
 
   const deleteObject = useCallback(
@@ -524,15 +682,19 @@ export function BucketStoreProvider({ children }: { children: ReactNode }) {
     [api],
   )
 
-  const fetchAdmins = useCallback(async () => {
-    try {
-      const data = await api.get('/admins')
-      const list = (data.admins as Record<string, unknown>[]) ?? []
-      setAdmins(list.map(parseAdmin))
-    } catch (e) {
-      if (e instanceof ApiException) setError(e.message)
-    }
-  }, [api])
+  const fetchAdmins = useCallback(
+    async (opts?: SilentFetch) => {
+      try {
+        const data = await api.get('/admins')
+        const list = (data.admins as Record<string, unknown>[]) ?? []
+        setAdmins(list.map(parseAdmin))
+        touchSync()
+      } catch (e) {
+        if (!opts?.silent && e instanceof ApiException) setError(e.message)
+      }
+    },
+    [api, touchSync],
+  )
 
   const createAdmin = useCallback(
     async (uname: string, password: string) => {
@@ -581,6 +743,158 @@ export function BucketStoreProvider({ children }: { children: ReactNode }) {
     [api],
   )
 
+  const applyLiveMessage = useCallback(
+    (msg: Record<string, unknown>) => {
+      const type = liveMessageType(msg)
+      const payload = livePayload(msg)
+      const bucketName = liveBucketName(msg)
+      const focus = liveFocusRef.current
+
+      if (
+        type === 'status' ||
+        type === 'server.status' ||
+        type === 'server_status'
+      ) {
+        const parsed = parseServerStatus(payload)
+        setServerStatus((prev) =>
+          statusFingerprint(prev) === statusFingerprint(parsed) ? prev : parsed,
+        )
+        touchSync()
+        return
+      }
+
+      if (
+        type === 'buckets' ||
+        type === 'buckets.updated' ||
+        type === 'buckets.list'
+      ) {
+        const list = liveStringList(payload.buckets ?? msg.buckets).map(parseBucket)
+        applyBucketList(list)
+        touchSync()
+        return
+      }
+
+      if (
+        type === 'bucket' ||
+        type === 'bucket.updated' ||
+        type === 'bucket.changed' ||
+        type === 'bucket.created'
+      ) {
+        applyBucket(payload, bucketName)
+        touchSync()
+        return
+      }
+
+      if (type === 'bucket.deleted' && bucketName) {
+        setBuckets((prev) => prev.filter((b) => b.name !== bucketName))
+        setSelectedBucket((prev) => (prev?.name === bucketName ? null : prev))
+        touchSync()
+        return
+      }
+
+      if (
+        (type === 'objects.changed' ||
+          type === 'object.created' ||
+          type === 'object.deleted' ||
+          type === 's3:objectcreated:put' ||
+          type === 's3:objectremoved:delete') &&
+        bucketName
+      ) {
+        void fetchBucketDetail(bucketName, { silent: true })
+        if (focus?.bucket === bucketName && focus.tab === 'files') {
+          void fetchObjects(bucketName, focus.prefix ?? '', '', { silent: true })
+        }
+        return
+      }
+
+      if (type.includes('credential') && bucketName) {
+        if (focus?.bucket === bucketName && focus.tab === 'credentials') {
+          void fetchCredentials(bucketName, { silent: true })
+        }
+        void fetchBucketDetail(bucketName, { silent: true })
+        return
+      }
+
+      if (type.includes('lifecycle') && bucketName) {
+        if (focus?.bucket === bucketName && focus.tab === 'lifecycle') {
+          void fetchLifecycleRules(bucketName, { silent: true })
+        }
+        return
+      }
+
+      if (type.includes('webhook') && bucketName) {
+        if (focus?.bucket === bucketName && focus.tab === 'webhooks') {
+          void fetchWebhooks(bucketName, { silent: true })
+        }
+        return
+      }
+
+      if (type.includes('admin')) {
+        if (focus?.screen === 'admins') void fetchAdmins({ silent: true })
+      }
+    },
+    [
+      applyBucket,
+      applyBucketList,
+      fetchAdmins,
+      fetchBucketDetail,
+      fetchCredentials,
+      fetchLifecycleRules,
+      fetchObjects,
+      fetchWebhooks,
+      touchSync,
+    ],
+  )
+
+  const applyLiveMessageRef = useRef(applyLiveMessage)
+  applyLiveMessageRef.current = applyLiveMessage
+
+  useEffect(() => {
+    if (!isLoggedIn || !token || !api.baseUrl) {
+      liveClientRef.current?.stop()
+      liveClientRef.current = null
+      setLiveMode('idle')
+      setLastSyncedAt(null)
+      return
+    }
+
+    const client = new LiveClient({
+      getBaseUrl: () => api.baseUrl,
+      getToken: () => token,
+      getFocus: () => liveFocusRef.current,
+      fetchStatus: () => fetchStatus({ silent: true }),
+      fetchBuckets: () => fetchBuckets({ silent: true }),
+      fetchBucketDetail: (name) => fetchBucketDetail(name, { silent: true }),
+      fetchObjects: (name, prefix) =>
+        fetchObjects(name, prefix, '', { silent: true }),
+      fetchCredentials: (name) => fetchCredentials(name, { silent: true }),
+      fetchLifecycleRules: (name) =>
+        fetchLifecycleRules(name, { silent: true }),
+      fetchWebhooks: (name) => fetchWebhooks(name, { silent: true }),
+      fetchAdmins: () => fetchAdmins({ silent: true }),
+      onMessage: (msg) => applyLiveMessageRef.current(msg),
+      onMode: setLiveMode,
+    })
+    liveClientRef.current = client
+    client.start()
+    return () => {
+      client.stop()
+      if (liveClientRef.current === client) liveClientRef.current = null
+    }
+  }, [
+    api,
+    fetchAdmins,
+    fetchBucketDetail,
+    fetchBuckets,
+    fetchCredentials,
+    fetchLifecycleRules,
+    fetchObjects,
+    fetchStatus,
+    fetchWebhooks,
+    isLoggedIn,
+    token,
+  ])
+
   const updateAvailable = useMemo(() => {
     if (!serverStatus || !latestVersion) return false
     if (!serverStatus.version) return false
@@ -616,6 +930,10 @@ export function BucketStoreProvider({ children }: { children: ReactNode }) {
       objectList,
       objectsLoading,
       admins,
+      liveMode,
+      lastSyncedAt,
+      setLiveFocus,
+      setLivePrefix,
       clearError,
       fetchStatus,
       fetchBuckets,
@@ -672,14 +990,18 @@ export function BucketStoreProvider({ children }: { children: ReactNode }) {
       fetchStatus,
       fetchWebhooks,
       isLoading,
+      lastSyncedAt,
       latestVersion,
       lifecycleRules,
+      liveMode,
       objectList,
       objectsLoading,
       reprocessImages,
       resetAdminPassword,
       selectedBucket,
       serverStatus,
+      setLiveFocus,
+      setLivePrefix,
       setPublicRead,
       setQuota,
       setStorage,

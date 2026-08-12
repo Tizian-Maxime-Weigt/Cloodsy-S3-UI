@@ -13,6 +13,15 @@ export function formatDate(iso: string): string {
   return d.toLocaleString()
 }
 
+export function formatRelativeTime(ts: number, now = Date.now()): string {
+  const seconds = Math.max(0, Math.round((now - ts) / 1000))
+  if (seconds < 5) return 'just now'
+  if (seconds < 60) return `${seconds}s ago`
+  const minutes = Math.round(seconds / 60)
+  if (minutes < 60) return `${minutes}m ago`
+  return new Date(ts).toLocaleTimeString()
+}
+
 /** Ensure endpoint has a scheme; bare hosts get https:// */
 export function normalizeEndpointUrl(raw: string): string {
   const trimmed = raw.trim().replace(/\/$/, '')

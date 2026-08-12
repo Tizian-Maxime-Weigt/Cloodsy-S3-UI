@@ -1,6 +1,7 @@
 import { Monitor, Moon, Sun } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { useTheme } from '../../store/theme'
+import { LiveBadge } from '../ui/LiveBadge'
 
 export function TopBar({
   serverName,
@@ -21,6 +22,7 @@ export function TopBar({
       {left}
       <div className="topbar__brand">{title}</div>
       {serverName ? <span className="topbar__badge">{serverName}</span> : null}
+      <LiveBadge />
       <div className="topbar__spacer" />
       {right}
       <button className="btn-icon mobile-only" onClick={theme.cycle} title="Toggle theme">

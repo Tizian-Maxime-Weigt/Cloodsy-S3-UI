@@ -66,6 +66,7 @@ export function Shell() {
   const { servers, activeServer } = serversStore
   const auth = useAuth()
   const buckets = useBuckets()
+  const { setLiveFocus } = buckets
   const { toast } = useToast()
 
   const [connectingId, setConnectingId] = useState<string | null>(null)
@@ -83,6 +84,26 @@ export function Shell() {
   const [mobileView, setMobileView] = useState<'servers' | 'dashboard' | 'bucket' | 'admins'>(
     'servers',
   )
+
+  useEffect(() => {
+    if (!connected) {
+      setLiveFocus(null)
+      return
+    }
+    if (showAdmins) {
+      setLiveFocus({ screen: 'admins' })
+      return
+    }
+    if (openBucketName) {
+      setLiveFocus({
+        screen: 'bucket',
+        bucket: openBucketName,
+        tab: bucketTab,
+      })
+      return
+    }
+    setLiveFocus({ screen: 'dashboard' })
+  }, [bucketTab, connected, openBucketName, setLiveFocus, showAdmins])
 
   const connectToServer = useCallback(
     async (

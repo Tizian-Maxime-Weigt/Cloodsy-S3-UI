@@ -13,6 +13,7 @@ Built with **Vite + React 19 + TypeScript**. No UI kit — custom CSS (shadcn/zi
 - Lifecycle rules & webhooks CRUD
 - Admin users with one-time password dialogs
 - Light / dark / system theme
+- Live dashboard stats and bucket settings (WebSocket when the server supports it, otherwise silent auto-refresh)
 - Responsive: sidebar ≥900px, mobile layout below
 
 ## Server-side setup (CORS)
@@ -112,5 +113,30 @@ add_header Permissions-Policy "camera=(), microphone=(), geolocation=(), payment
 | `src/api/client.ts` | `GET/POST/PUT/DELETE` → `{baseUrl}/admin{path}`, Bearer token, 10s timeout |
 | `src/store/ServerStore.tsx` | Server list + optional passwords/tokens in `localStorage` |
 | `src/store/auth.tsx` | Connect / login / logout / 401 recovery |
-| `src/store/buckets.tsx` | Buckets, objects, credentials, lifecycle, webhooks, admins, status |
+| `src/store/buckets.tsx` | Buckets, objects, credentials, lifecycle, webhooks, admins, status, live sync |
+
+## Live updates
+
+While you are connected, dashboard stats, bucket overview, and settings stay current without clicking Refresh.
+
+1. **WebSocket** — If the Admin API serves `GET /admin/ws`, the UI connects with the session token and applies JSON events immediately. The top bar shows **Live**.
+2. **Auto-refresh** — Current Cloodsy S3 releases are REST-only. The UI probes the socket once, then silently polls `/admin/status`, `/admin/buckets`, and the open bucket. The top bar shows **Auto**. Polling pauses while the browser tab is hidden.
+
+Settings toggles (versioning, public-read, WebDAV, quota) update the UI as soon as the Admin API accepts them; background sync confirms the server value.
+
+### Optional Admin WebSocket protocol
+
+A future server can enable **Live** by accepting a WebSocket at `/admin/ws` (token as `?token=` and/or a first `{ "type": "auth", "token" }` message) and sending JSON:
+
+```json
+{ "type": "hello" }
+{ "type": "status", "data": { "status": "ok", "version": "1.0.1" } }
+{ "type": "buckets", "data": { "buckets": [] } }
+{ "type": "bucket.updated", "data": { "name": "photos", "public_read": true } }
+{ "type": "objects.changed", "bucket": "photos" }
+```
+
+The client also sends `{ "type": "subscribe", "channels": ["status", "buckets"] }` after connect. Until that endpoint exists, **Auto** polling is the compatibility path.
+
+Token query strings may appear in reverse-proxy access logs; prefer first-message auth on the server when you add the socket.
 

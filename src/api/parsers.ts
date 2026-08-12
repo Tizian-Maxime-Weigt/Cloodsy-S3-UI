@@ -26,6 +26,67 @@ export function parseBucket(json: Record<string, unknown>): Bucket {
   }
 }
 
+export function bucketToPayload(bucket: Bucket): Record<string, unknown> {
+  return {
+    id: bucket.id,
+    name: bucket.name,
+    quota_bytes: bucket.quotaBytes,
+    versioning: bucket.versioning,
+    storage_dir: bucket.storageDir,
+    storage_path: bucket.storagePath,
+    public_read: bucket.publicRead,
+    webdav_enabled: bucket.webdavEnabled,
+    objects: bucket.objects,
+    usage_bytes: bucket.usageBytes,
+    credentials: bucket.credentials,
+    created_at: bucket.createdAt,
+  }
+}
+
+export function mergeBucket(
+  prev: Bucket | undefined,
+  json: Record<string, unknown>,
+): Bucket {
+  return parseBucket({
+    ...(prev ? bucketToPayload(prev) : {}),
+    ...json,
+    name: json.name ?? prev?.name ?? json.bucket,
+  })
+}
+
+export function bucketFingerprint(bucket: Bucket): string {
+  return [
+    bucket.id,
+    bucket.name,
+    bucket.quotaBytes,
+    bucket.versioning,
+    bucket.storageDir,
+    bucket.storagePath ?? '',
+    bucket.publicRead ? 1 : 0,
+    bucket.webdavEnabled ? 1 : 0,
+    bucket.objects,
+    bucket.usageBytes,
+    bucket.credentials,
+    bucket.createdAt,
+  ].join('\0')
+}
+
+export function bucketsFingerprint(list: Bucket[]): string {
+  return list.map(bucketFingerprint).join('\n')
+}
+
+export function statusFingerprint(status: ServerStatus | null): string {
+  if (!status) return ''
+  return [
+    status.status,
+    status.version,
+    status.buckets,
+    status.adminExists ? 1 : 0,
+    status.webdavEnabled ? 1 : 0,
+    status.webdavListen,
+  ].join('\0')
+}
+
 export function parseCredential(json: Record<string, unknown>): Credential {
   return {
     id: Number(json.id ?? 0),

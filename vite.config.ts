@@ -20,6 +20,7 @@ export default defineConfig({
             '/admin': {
               target: adminTarget,
               changeOrigin: true,
+              ws: true,
             },
           }
         : {}),
