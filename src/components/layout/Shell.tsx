@@ -1,4 +1,4 @@
-import { Plus, Server } from 'lucide-react'
+import { LogIn, Plus, Server } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { BucketTab, ServerConnection } from '../../types'
 import {
@@ -303,7 +303,11 @@ export function Shell() {
             }
           />
           {!connected ? (
-            <Welcome onAdd={() => setAddOpen(true)} connectingId={connectingId} />
+            <Welcome
+              onAdd={() => setAddOpen(true)}
+              onConnect={(s) => void connectToServer(s, { resetView: true })}
+              connectingId={connectingId}
+            />
           ) : showAdmins ? (
             <AdminScreen />
           ) : openBucketName ? (
@@ -443,18 +447,24 @@ export function Shell() {
   )
 }
 
+function hostLabel(url: string) {
+  return url.replace(/^https?:\/\//, '').replace(/\/$/, '')
+}
+
 function Welcome({
   onAdd,
+  onConnect,
   connectingId,
 }: {
   onAdd: () => void
+  onConnect: (server: ServerConnection) => void
   connectingId: string | null
 }) {
-  const { servers } = useServers()
+  const { servers, hasPersistedPassword } = useServers()
   return (
     <div className="app-content">
-      <div className="page" style={{ height: '100%', justifyContent: 'center' }}>
-        {servers.length === 0 ? (
+      {servers.length === 0 ? (
+        <div className="page" style={{ height: '100%', justifyContent: 'center' }}>
           <EmptyState
             icon={Server}
             title="Welcome to Cloodsy S3"
@@ -466,14 +476,81 @@ function Welcome({
               </Button>
             }
           />
-        ) : (
-          <EmptyState
-            icon={Server}
-            title={connectingId ? 'Connecting…' : 'Select a server'}
-            description="Choose a server from the sidebar to connect."
-          />
-        )}
-      </div>
+        </div>
+      ) : (
+        <div className="page">
+          <div className="page-header">
+            <h1>Servers</h1>
+            <div className="spacer" />
+            <Button size="sm" onClick={onAdd}>
+              <Plus size={14} />
+              Add Server
+            </Button>
+          </div>
+          <p className="field-hint" style={{ marginTop: -8 }}>
+            {connectingId ? 'Connecting…' : 'Select a server to sign in.'}
+          </p>
+          <div className="table-wrap">
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Admin</th>
+                  <th>S3</th>
+                  <th>User</th>
+                  <th>Auth</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {servers.map((server) => {
+                  const busy = connectingId === server.id
+                  const saved = hasPersistedPassword(server.id)
+                  const s3 = server.s3Url?.trim() || server.url
+                  return (
+                    <tr
+                      key={server.id}
+                      className="is-clickable"
+                      onClick={() => {
+                        if (!connectingId) onConnect(server)
+                      }}
+                    >
+                      <td>
+                        <strong>{server.name}</strong>
+                      </td>
+                      <td className="mono">{hostLabel(server.url)}</td>
+                      <td className="mono">{hostLabel(s3)}</td>
+                      <td>{server.username}</td>
+                      <td>
+                        <span className={`badge ${saved ? 'badge--ok' : ''}`}>
+                          {saved ? 'Saved password' : 'Password'}
+                        </span>
+                      </td>
+                      <td>
+                        <Button
+                          size="sm"
+                          disabled={!!connectingId}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            onConnect(server)
+                          }}
+                        >
+                          {busy ? (
+                            <span className="spinner" />
+                          ) : (
+                            <LogIn size={14} />
+                          )}
+                          {busy ? 'Connecting' : 'Connect'}
+                        </Button>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

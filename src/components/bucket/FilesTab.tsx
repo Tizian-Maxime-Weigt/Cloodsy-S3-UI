@@ -47,8 +47,9 @@ import { useServers } from '../../store/ServerStore'
 import { useToast } from '../../store/toast'
 import { debugError } from '../../lib/debug'
 import type { S3Object } from '../../types'
-import { PromptModal, TextEditModal, ImagePreviewModal } from '../dialogs/FileDialogs'
+import { PromptModal, TextEditModal } from '../dialogs/FileDialogs'
 import { Button } from '../ui/Button'
+import { Dropdown } from '../ui/Dropdown'
 import { EmptyState } from '../ui/EmptyState'
 import { ConfirmModal } from '../ui/Modal'
 
@@ -124,21 +125,20 @@ export function FilesTab({ bucketName }: { bucketName: string }) {
   } | null>(null)
   const [dragOver, setDragOver] = useState(false)
   const [menuKey, setMenuKey] = useState<string | null>(null)
+  const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null)
   const [renameTarget, setRenameTarget] = useState<string | null>(null)
   const [createFolderOpen, setCreateFolderOpen] = useState(false)
   const [editTarget, setEditTarget] = useState<{ key: string; text: string } | null>(
     null,
   )
-  const [preview, setPreview] = useState<{
-    key: string
-    src: string | null
-    loading: boolean
-    error: string | null
-    revoke?: string
-  } | null>(null)
 
   const publicRead =
     selectedBucket?.name === bucketName ? selectedBucket.publicRead : false
+
+  const closeMenu = useCallback(() => {
+    setMenuKey(null)
+    setMenuAnchor(null)
+  }, [])
 
   const refresh = useCallback(async () => {
     await fetchObjects(bucketName, prefix)
@@ -149,6 +149,7 @@ export function FilesTab({ bucketName }: { bucketName: string }) {
     void fetchObjects(bucketName, prefix)
     setSelected(new Set())
     setMenuKey(null)
+    setMenuAnchor(null)
   }, [bucketName, prefix, fetchObjects])
 
   useEffect(() => {
@@ -197,66 +198,6 @@ export function FilesTab({ bucketName }: { bucketName: string }) {
     [bucketName, s3Endpoint],
   )
 
-  const closePreview = () => {
-    setPreview((prev) => {
-      if (prev?.revoke) URL.revokeObjectURL(prev.revoke)
-      return null
-    })
-  }
-
-  const openImagePreview = async (obj: S3Object) => {
-    if (!s3Endpoint) {
-      toast('Set an S3 URL on the server first', 'error')
-      return
-    }
-    setMenuKey(null)
-    // Prefer public view URL (inline via image transform). Fallback: signed fetch blob.
-    const viewUrl = objectViewUrl(obj.key)
-    if (publicRead && viewUrl) {
-      setPreview({ key: obj.key, src: viewUrl, loading: false, error: null })
-      return
-    }
-    setPreview({ key: obj.key, src: null, loading: true, error: null })
-    const client = requireS3()
-    if (!client) {
-      // Still try public view URL even if credentials missing
-      if (viewUrl) {
-        setPreview({ key: obj.key, src: viewUrl, loading: false, error: null })
-        return
-      }
-      setPreview({
-        key: obj.key,
-        src: null,
-        loading: false,
-        error: 'Cannot load image',
-      })
-      return
-    }
-    try {
-      const { blob } = await s3DownloadBlob(client, bucketName, obj.key)
-      const url = URL.createObjectURL(blob)
-      setPreview({
-        key: obj.key,
-        src: url,
-        loading: false,
-        error: null,
-        revoke: url,
-      })
-    } catch (e) {
-      // Last resort: public transform URL (works if public-read)
-      if (viewUrl) {
-        setPreview({ key: obj.key, src: viewUrl, loading: false, error: null })
-        return
-      }
-      setPreview({
-        key: obj.key,
-        src: null,
-        loading: false,
-        error: e instanceof S3OpsError ? e.message : 'Failed to load image',
-      })
-    }
-  }
-
   const copyPublicUrl = async (key: string) => {
     // For images copy the view URL so pasted links display instead of downloading
     const url = isImageKey(key) ? objectViewUrl(key) : objectPublicUrl(key)
@@ -275,17 +216,10 @@ export function FilesTab({ bucketName }: { bucketName: string }) {
     } catch {
       toast(url, 'info')
     }
-    setMenuKey(null)
+    closeMenu()
   }
 
   const openPublicUrl = (key: string, contentType?: string) => {
-    if (isImageKey(key, contentType)) {
-      const obj = objectList?.objects.find((o) => o.key === key)
-      if (obj) {
-        void openImagePreview(obj)
-        return
-      }
-    }
     const url = isImageKey(key, contentType)
       ? objectViewUrl(key)
       : objectPublicUrl(key)
@@ -294,7 +228,7 @@ export function FilesTab({ bucketName }: { bucketName: string }) {
       return
     }
     window.open(url, '_blank', 'noopener,noreferrer')
-    setMenuKey(null)
+    closeMenu()
   }
 
   const openInTab = (key: string) => {
@@ -304,14 +238,8 @@ export function FilesTab({ bucketName }: { bucketName: string }) {
       return
     }
     window.open(url, '_blank', 'noopener,noreferrer')
+    closeMenu()
   }
-
-  useEffect(() => {
-    if (!menuKey) return
-    const close = () => setMenuKey(null)
-    window.addEventListener('click', close)
-    return () => window.removeEventListener('click', close)
-  }, [menuKey])
 
   const crumbs = useMemo(() => {
     if (!prefix) return [] as string[]
@@ -440,7 +368,7 @@ export function FilesTab({ bucketName }: { bucketName: string }) {
       toast(e instanceof S3OpsError ? e.message : 'Download failed', 'error')
     } finally {
       setBusy(false)
-      setMenuKey(null)
+      closeMenu()
     }
   }
 
@@ -460,7 +388,7 @@ export function FilesTab({ bucketName }: { bucketName: string }) {
       toast(e instanceof S3OpsError ? e.message : 'Failed to load file', 'error')
     } finally {
       setBusy(false)
-      setMenuKey(null)
+      closeMenu()
     }
   }
 
@@ -543,6 +471,7 @@ export function FilesTab({ bucketName }: { bucketName: string }) {
   }
 
   const empty = !objectList || (objectList.objects.length === 0 && objectList.prefixes.length === 0)
+  const menuObj = objectList?.objects.find((o) => o.key === menuKey) ?? null
 
   return (
     <div
@@ -666,19 +595,6 @@ export function FilesTab({ bucketName }: { bucketName: string }) {
         </div>
       ) : null}
 
-      {s3Endpoint ? (
-        <div className={`banner ${publicRead ? 'banner--ok' : 'banner--warn'}`}>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontWeight: 500, marginBottom: 2 }}>
-              {publicRead ? 'Public object URLs' : 'Object URLs (Public read is off)'}
-            </div>
-            <code className="public-url-sample">
-              {publicObjectUrl(s3Endpoint, bucketName, prefix ? `${prefix}…` : '…')}
-            </code>
-          </div>
-        </div>
-      ) : null}
-
       {objectsLoading && !objectList ? (
         <div className="empty-state">
           <div className="spinner" />
@@ -760,7 +676,6 @@ export function FilesTab({ bucketName }: { bucketName: string }) {
               })}
               {objectList!.objects.map((obj) => {
                 const Icon = iconFor(obj.key)
-                const editable = isTextEditable(obj.key, obj.contentType, obj.size)
                 const image = isImageKey(obj.key, obj.contentType)
                 const href = image ? objectViewUrl(obj.key) : objectPublicUrl(obj.key)
                 return (
@@ -781,16 +696,11 @@ export function FilesTab({ bucketName }: { bucketName: string }) {
                         title={href || undefined}
                         onClick={(e) => {
                           e.preventDefault()
-                          if (image) {
-                            void openImagePreview(obj)
-                            return
-                          }
                           openPublicUrl(obj.key, obj.contentType)
                         }}
                       >
                         <Icon size={16} />
                         <span>{fileNameFromKey(obj.key)}</span>
-                        <ExternalLink size={12} className="file-link__ext" />
                       </a>
                     </td>
                     <td>{formatBytes(obj.size)}</td>
@@ -824,77 +734,16 @@ export function FilesTab({ bucketName }: { bucketName: string }) {
                             disabled={busy}
                             onClick={(e) => {
                               e.stopPropagation()
-                              setMenuKey((k) => (k === obj.key ? null : obj.key))
+                              if (menuKey === obj.key) {
+                                closeMenu()
+                              } else {
+                                setMenuKey(obj.key)
+                                setMenuAnchor(e.currentTarget)
+                              }
                             }}
                           >
                             <MoreHorizontal size={14} />
                           </button>
-                          {menuKey === obj.key ? (
-                            <div className="menu" onClick={(e) => e.stopPropagation()}>
-                              {image ? (
-                                <button
-                                  type="button"
-                                  onClick={() => void openImagePreview(obj)}
-                                >
-                                  <ExternalLink size={14} />
-                                  Preview
-                                </button>
-                              ) : null}
-                              <button
-                                type="button"
-                                onClick={() => openInTab(obj.key)}
-                              >
-                                <ExternalLink size={14} />
-                                Open in tab
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => void copyPublicUrl(obj.key)}
-                              >
-                                <Copy size={14} />
-                                Copy public URL
-                              </button>
-                              {editable && canWrite ? (
-                                <button
-                                  type="button"
-                                  onClick={() => void openEditor(obj)}
-                                >
-                                  <Pencil size={14} />
-                                  Edit
-                                </button>
-                              ) : null}
-                              {canWrite ? (
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setRenameTarget(obj.key)
-                                    setMenuKey(null)
-                                  }}
-                                >
-                                  <TextCursorInput size={14} />
-                                  Rename
-                                </button>
-                              ) : null}
-                              <button
-                                type="button"
-                                onClick={() => void downloadObject(obj)}
-                              >
-                                <Download size={14} />
-                                Download
-                              </button>
-                              <button
-                                type="button"
-                                className="is-danger"
-                                onClick={() => {
-                                  setConfirm({ type: 'object', keys: [obj.key] })
-                                  setMenuKey(null)
-                                }}
-                              >
-                                <Trash2 size={14} />
-                                Delete
-                              </button>
-                            </div>
-                          ) : null}
                         </div>
                       </div>
                     </td>
@@ -963,21 +812,53 @@ export function FilesTab({ bucketName }: { bucketName: string }) {
         onSave={saveEditor}
       />
 
-      <ImagePreviewModal
-        open={!!preview}
-        title={preview ? fileNameFromKey(preview.key) : 'Preview'}
-        src={preview?.src ?? null}
-        loading={preview?.loading}
-        error={preview?.error}
-        publicUrl={
-          preview ? objectViewUrl(preview.key) || objectPublicUrl(preview.key) : undefined
-        }
-        onClose={closePreview}
-        onCopy={
-          preview ? () => void copyPublicUrl(preview.key) : undefined
-        }
-        onOpenTab={preview ? () => openInTab(preview.key) : undefined}
-      />
+      <Dropdown open={!!menuObj} onClose={closeMenu} anchor={menuAnchor}>
+        {menuObj ? (
+          <>
+            <button type="button" onClick={() => openInTab(menuObj.key)}>
+              <ExternalLink size={14} />
+              Open in tab
+            </button>
+            <button type="button" onClick={() => void copyPublicUrl(menuObj.key)}>
+              <Copy size={14} />
+              Copy public URL
+            </button>
+            {isTextEditable(menuObj.key, menuObj.contentType, menuObj.size) && canWrite ? (
+              <button type="button" onClick={() => void openEditor(menuObj)}>
+                <Pencil size={14} />
+                Edit
+              </button>
+            ) : null}
+            {canWrite ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setRenameTarget(menuObj.key)
+                  closeMenu()
+                }}
+              >
+                <TextCursorInput size={14} />
+                Rename
+              </button>
+            ) : null}
+            <button type="button" onClick={() => void downloadObject(menuObj)}>
+              <Download size={14} />
+              Download
+            </button>
+            <button
+              type="button"
+              className="is-danger"
+              onClick={() => {
+                setConfirm({ type: 'object', keys: [menuObj.key] })
+                closeMenu()
+              }}
+            >
+              <Trash2 size={14} />
+              Delete
+            </button>
+          </>
+        ) : null}
+      </Dropdown>
     </div>
   )
 }

@@ -75,9 +75,11 @@ export function AdminPasswordDialog({
         </div>
         <div className="secret-row">
           <code className="mono">{resultPassword}</code>
-          <button className="btn-icon" onClick={copy} type="button">
-            {copied ? <Check size={16} /> : <Copy size={16} />}
-          </button>
+          <div className="secret-row__actions">
+            <button className="btn-icon" onClick={copy} type="button" title="Copy password">
+              {copied ? <Check size={16} /> : <Copy size={16} />}
+            </button>
+          </div>
         </div>
       </Modal>
     )

@@ -9,6 +9,13 @@ import {
 
 export type ToastKind = 'success' | 'error' | 'info'
 
+const MAX_TOASTS = 4
+const DURATION: Record<ToastKind, number> = {
+  success: 3200,
+  info: 4000,
+  error: 5200,
+}
+
 interface Toast {
   id: number
   message: string
@@ -35,8 +42,8 @@ export function ToastStoreProvider({ children }: { children: ReactNode }) {
   const toast = useCallback(
     (message: string, kind: ToastKind = 'info') => {
       const id = nextId++
-      setToasts((prev) => [...prev, { id, message, kind }])
-      window.setTimeout(() => dismiss(id), 3500)
+      setToasts((prev) => [...prev, { id, message, kind }].slice(-MAX_TOASTS))
+      window.setTimeout(() => dismiss(id), DURATION[kind])
     },
     [dismiss],
   )

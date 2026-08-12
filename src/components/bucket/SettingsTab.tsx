@@ -144,9 +144,16 @@ export function SettingsTab({ bucket }: { bucket: Bucket }) {
           </div>
           <div className="secret-row">
             <code className="mono">{`${webdavMountUrl}${bucket.name}`}</code>
-            <button className="btn-icon" type="button" onClick={() => void copyMount()}>
-              <Copy size={14} />
-            </button>
+            <div className="secret-row__actions">
+              <button
+                className="btn-icon"
+                type="button"
+                title="Copy mount URL"
+                onClick={() => void copyMount()}
+              >
+                <Copy size={14} />
+              </button>
+            </div>
           </div>
           <p className="field-hint">
             Username is an access key; password is its secret key.
