@@ -125,12 +125,35 @@ export function isImageKey(key: string, contentType?: string): boolean {
   return ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'avif', 'bmp', 'ico'].includes(ext)
 }
 
-async function toUint8Array(
-  body: Blob | string | Uint8Array,
-): Promise<Uint8Array> {
-  if (body instanceof Uint8Array) return body
-  if (typeof body === 'string') return new TextEncoder().encode(body)
-  return new Uint8Array(await body.arrayBuffer())
+export const MULTIPART_THRESHOLD = 16 * 1024 * 1024
+export const MULTIPART_PART_SIZE = 8 * 1024 * 1024
+
+export interface UploadProgress {
+  bytesSent: number
+  bytesTotal: number
+  part?: number
+  parts?: number
+}
+
+function bodyByteLength(body: Blob | string | Uint8Array): number {
+  if (typeof body === 'string') return new TextEncoder().encode(body).byteLength
+  if (body instanceof Uint8Array) return body.byteLength
+  return body.size
+}
+
+function toRequestBody(body: Blob | string | Uint8Array): BodyInit {
+  if (typeof body === 'string') return body
+  if (body instanceof Uint8Array) {
+    return body.buffer.slice(
+      body.byteOffset,
+      body.byteOffset + body.byteLength,
+    ) as ArrayBuffer
+  }
+  return body
+}
+
+function xmlTag(xml: string, tag: string): string | null {
+  return xml.match(new RegExp(`<${tag}>([^<]+)</${tag}>`))?.[1] ?? null
 }
 
 async function readS3Error(res: Response): Promise<{ summary: string; body: string }> {
@@ -181,18 +204,14 @@ async function s3Fetch(
   }
 }
 
-export async function s3Upload(
+async function s3PutObject(
   session: S3Session,
   bucket: string,
   key: string,
   body: Blob | string | Uint8Array,
-  contentType?: string,
+  contentType: string | undefined,
+  bytes: number,
 ) {
-  const bytes = await toUint8Array(body)
-  const ab = bytes.buffer.slice(
-    bytes.byteOffset,
-    bytes.byteOffset + bytes.byteLength,
-  ) as ArrayBuffer
   const url = objectUrl(session.endpoint, bucket, key)
   await s3Fetch(
     session,
@@ -200,14 +219,147 @@ export async function s3Upload(
     url,
     {
       method: 'PUT',
-      body: ab,
+      body: toRequestBody(body),
       headers: {
         'Content-Type': contentType || 'application/octet-stream',
-        'Content-Length': String(bytes.byteLength),
+        'Content-Length': String(bytes),
       },
     },
-    { bucket, key, bytes: bytes.byteLength, contentType },
+    { bucket, key, bytes, contentType },
   )
+}
+
+async function s3AbortMultipart(
+  session: S3Session,
+  bucket: string,
+  key: string,
+  uploadId: string,
+) {
+  const url = `${objectUrl(session.endpoint, bucket, key)}?uploadId=${encodeURIComponent(uploadId)}`
+  try {
+    await s3Fetch(session, 'AbortMultipart', url, { method: 'DELETE' }, { bucket, key })
+  } catch {
+    /* best-effort */
+  }
+}
+
+async function s3TryCreateMultipart(
+  session: S3Session,
+  bucket: string,
+  key: string,
+  contentType: string,
+): Promise<string | null> {
+  const initiateUrl = `${objectUrl(session.endpoint, bucket, key)}?uploads`
+  try {
+    const initRes = await s3Fetch(
+      session,
+      'CreateMultipart',
+      initiateUrl,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': contentType },
+      },
+      { bucket, key },
+    )
+    const uploadId = xmlTag(await initRes.text(), 'UploadId')
+    return uploadId || null
+  } catch (e) {
+    debugError('Multipart not available, using single PUT', e)
+    return null
+  }
+}
+
+async function s3UploadMultipart(
+  session: S3Session,
+  bucket: string,
+  key: string,
+  blob: Blob,
+  contentType: string,
+  uploadId: string,
+  onProgress?: (p: UploadProgress) => void,
+) {
+  const parts = Math.ceil(blob.size / MULTIPART_PART_SIZE)
+  const etags: { partNumber: number; etag: string }[] = []
+
+  try {
+    for (let i = 0; i < parts; i++) {
+      const start = i * MULTIPART_PART_SIZE
+      const end = Math.min(start + MULTIPART_PART_SIZE, blob.size)
+      const chunk = blob.slice(start, end)
+      const partNumber = i + 1
+      const partUrl = `${objectUrl(session.endpoint, bucket, key)}?partNumber=${partNumber}&uploadId=${encodeURIComponent(uploadId)}`
+      const res = await s3Fetch(
+        session,
+        'UploadPart',
+        partUrl,
+        {
+          method: 'PUT',
+          body: chunk,
+          headers: {
+            'Content-Type': contentType,
+            'Content-Length': String(chunk.size),
+          },
+        },
+        { bucket, key, partNumber, parts, bytes: chunk.size },
+      )
+      const etag = res.headers.get('etag') || res.headers.get('ETag')
+      if (!etag) throw new S3OpsError(`Upload failed: missing ETag for part ${partNumber}`)
+      etags.push({ partNumber, etag })
+      onProgress?.({
+        bytesSent: end,
+        bytesTotal: blob.size,
+        part: partNumber,
+        parts,
+      })
+    }
+
+    const completeXml = `<CompleteMultipartUpload>${etags
+      .map(
+        (p) =>
+          `<Part><PartNumber>${p.partNumber}</PartNumber><ETag>${p.etag}</ETag></Part>`,
+      )
+      .join('')}</CompleteMultipartUpload>`
+    const completeUrl = `${objectUrl(session.endpoint, bucket, key)}?uploadId=${encodeURIComponent(uploadId)}`
+    await s3Fetch(
+      session,
+      'CompleteMultipart',
+      completeUrl,
+      {
+        method: 'POST',
+        body: completeXml,
+        headers: { 'Content-Type': 'application/xml' },
+      },
+      { bucket, key, parts },
+    )
+  } catch (e) {
+    await s3AbortMultipart(session, bucket, key, uploadId)
+    throw e
+  }
+}
+
+export async function s3Upload(
+  session: S3Session,
+  bucket: string,
+  key: string,
+  body: Blob | string | Uint8Array,
+  contentType?: string,
+  onProgress?: (p: UploadProgress) => void,
+) {
+  const bytes = bodyByteLength(body)
+  const type = contentType || 'application/octet-stream'
+  onProgress?.({ bytesSent: 0, bytesTotal: bytes })
+
+  if (body instanceof Blob && bytes >= MULTIPART_THRESHOLD) {
+    const uploadId = await s3TryCreateMultipart(session, bucket, key, type)
+    if (uploadId) {
+      await s3UploadMultipart(session, bucket, key, body, type, uploadId, onProgress)
+      onProgress?.({ bytesSent: bytes, bytesTotal: bytes })
+      return
+    }
+  }
+
+  await s3PutObject(session, bucket, key, body, type, bytes)
+  onProgress?.({ bytesSent: bytes, bytesTotal: bytes })
 }
 
 export async function s3DownloadBlob(

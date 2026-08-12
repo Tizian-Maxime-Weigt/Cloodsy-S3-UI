@@ -6,6 +6,9 @@ const KEY_ACTIVE = 'cloodsy_active_server'
 const pwKey = (id: string) => `cloodsy_pw_${id}`
 const tokenKey = (id: string) => `cloodsy_token_${id}`
 
+/** Session-only passwords (never written unless persist=true). */
+const memoryPasswords = new Map<string, string>()
+
 function sanitizeServer(raw: unknown): ServerConnection | null {
   if (!raw || typeof raw !== 'object') return null
   const s = raw as Partial<ServerConnection>
@@ -58,14 +61,29 @@ export function setLastActiveServerId(id: string | null) {
 }
 
 export function getPassword(serverId: string): string | null {
-  return localStorage.getItem(pwKey(serverId))
+  return memoryPasswords.get(serverId) ?? localStorage.getItem(pwKey(serverId))
 }
 
-export function setPassword(serverId: string, password: string) {
-  localStorage.setItem(pwKey(serverId), password)
+export function hasPersistedPassword(serverId: string): boolean {
+  return localStorage.getItem(pwKey(serverId)) != null
+}
+
+export function setPassword(
+  serverId: string,
+  password: string,
+  persistPassword: boolean,
+) {
+  memoryPasswords.set(serverId, password)
+  if (persistPassword) localStorage.setItem(pwKey(serverId), password)
+  else localStorage.removeItem(pwKey(serverId))
+}
+
+export function clearPersistedPassword(serverId: string) {
+  localStorage.removeItem(pwKey(serverId))
 }
 
 export function clearPassword(serverId: string) {
+  memoryPasswords.delete(serverId)
   localStorage.removeItem(pwKey(serverId))
 }
 

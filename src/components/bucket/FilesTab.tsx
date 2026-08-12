@@ -33,6 +33,7 @@ import {
   S3OpsError,
   triggerBrowserDownload,
   type S3Session,
+  type UploadProgress,
 } from '../../api/s3'
 import {
   fileExtension,
@@ -115,6 +116,12 @@ export function FilesTab({ bucketName }: { bucketName: string }) {
   const [s3Ready, setS3Ready] = useState(false)
   const [s3Error, setS3Error] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [upload, setUpload] = useState<{
+    name: string
+    index: number
+    total: number
+    progress: UploadProgress
+  } | null>(null)
   const [dragOver, setDragOver] = useState(false)
   const [menuKey, setMenuKey] = useState<string | null>(null)
   const [renameTarget, setRenameTarget] = useState<string | null>(null)
@@ -379,14 +386,29 @@ export function FilesTab({ bucketName }: { bucketName: string }) {
     setBusy(true)
     let ok = 0
     try {
-      for (const file of list) {
+      for (let i = 0; i < list.length; i++) {
+        const file = list[i]!
         const key = `${prefix}${file.name}`
+        setUpload({
+          name: file.name,
+          index: i + 1,
+          total: list.length,
+          progress: { bytesSent: 0, bytesTotal: file.size },
+        })
         await s3Upload(
           client,
           bucketName,
           key,
           file,
           file.type || guessContentType(file.name),
+          (progress) => {
+            setUpload({
+              name: file.name,
+              index: i + 1,
+              total: list.length,
+              progress,
+            })
+          },
         )
         ok++
       }
@@ -400,6 +422,7 @@ export function FilesTab({ bucketName }: { bucketName: string }) {
       toast(e instanceof S3OpsError ? e.message : 'Upload failed', 'error')
     } finally {
       setBusy(false)
+      setUpload(null)
       if (fileInputRef.current) fileInputRef.current.value = ''
     }
   }
@@ -612,6 +635,35 @@ export function FilesTab({ bucketName }: { bucketName: string }) {
 
       {s3Error && !s3Ready ? (
         <div className="banner banner--warn">{s3Error}</div>
+      ) : null}
+
+      {upload ? (
+        <div className="banner upload-progress">
+          <div className="upload-progress__label">
+            Uploading {upload.name}
+            {upload.total > 1 ? ` (${upload.index}/${upload.total})` : ''}
+            {' · '}
+            {formatBytes(upload.progress.bytesSent)} / {formatBytes(upload.progress.bytesTotal)}
+            {upload.progress.parts
+              ? ` · part ${upload.progress.part ?? 0}/${upload.progress.parts}`
+              : ''}
+          </div>
+          <div className="upload-progress__bar">
+            <div
+              className="upload-progress__fill"
+              style={{
+                width: `${
+                  upload.progress.bytesTotal
+                    ? Math.min(
+                        100,
+                        (upload.progress.bytesSent / upload.progress.bytesTotal) * 100,
+                      )
+                    : 0
+                }%`,
+              }}
+            />
+          </div>
+        </div>
       ) : null}
 
       {s3Endpoint ? (

@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { BucketTab, ServerConnection } from '../../types'
 import {
   parseLocationHash,
+  viewToLocation,
   writeLocationHash,
   type AppLocation,
 } from '../../lib/location'
@@ -14,6 +15,7 @@ import { AdminScreen } from '../admins/AdminScreen'
 import { BucketDetailScreen } from '../bucket/BucketDetailScreen'
 import { DashboardScreen } from '../dashboard/DashboardScreen'
 import { AddServerDialog } from '../dialogs/AddServerDialog'
+import { ConnectPasswordDialog } from '../dialogs/ConnectPasswordDialog'
 import { AppSidebar } from './AppSidebar'
 import { TopBar } from './TopBar'
 import { Button } from '../ui/Button'
@@ -72,53 +74,49 @@ export function Shell() {
   const [bucketTab, setBucketTab] = useState<BucketTab>('overview')
   const [showAdmins, setShowAdmins] = useState(false)
   const [addOpen, setAddOpen] = useState(false)
+  const [passwordPrompt, setPasswordPrompt] = useState<{
+    server: ServerConnection
+    restore?: AppLocation | null
+    resetView?: boolean
+  } | null>(null)
+  const [promptError, setPromptError] = useState<string | null>(null)
   const [mobileView, setMobileView] = useState<'servers' | 'dashboard' | 'bucket' | 'admins'>(
     'servers',
-  )
-
-  const syncHash = useCallback(
-    (serverId: string | null | undefined, state: {
-      openBucketName: string | null
-      bucketTab: BucketTab
-      showAdmins: boolean
-      connected: boolean
-    }) => {
-      if (!state.connected || !serverId) {
-        writeLocationHash({ screen: 'welcome' })
-        return
-      }
-      if (state.showAdmins) {
-        writeLocationHash({ screen: 'admins', serverId })
-        return
-      }
-      if (state.openBucketName) {
-        writeLocationHash({
-          screen: 'bucket',
-          serverId,
-          bucket: state.openBucketName,
-          tab: state.bucketTab,
-        })
-        return
-      }
-      writeLocationHash({ screen: 'dashboard', serverId })
-    },
-    [],
   )
 
   const connectToServer = useCallback(
     async (
       server: ServerConnection,
-      opts?: { restore?: AppLocation | null; resetView?: boolean },
+      opts?: {
+        restore?: AppLocation | null
+        resetView?: boolean
+        auth?: { password?: string; rememberPassword?: boolean }
+      },
     ) => {
       if (connectingId) return false
       setConnectingId(server.id)
-      const success = await auth.connectToServer(server)
+      const result = await auth.connectToServer(server, opts?.auth)
       setConnectingId(null)
-      if (!success) {
-        toast(auth.error ?? 'Connection failed', 'error')
+      if (!result.ok) {
+        if (result.needsPassword) {
+          setPasswordPrompt({
+            server,
+            restore: opts?.restore,
+            resetView: opts?.resetView,
+          })
+          setPromptError(null)
+          return false
+        }
+        if (passwordPrompt?.server.id === server.id) {
+          setPromptError(result.error)
+        } else {
+          toast(result.error, 'error')
+        }
         return false
       }
 
+      setPasswordPrompt(null)
+      setPromptError(null)
       setConnected(true)
       void buckets.fetchBuckets()
       void buckets.fetchStatus()
@@ -145,7 +143,7 @@ export function Shell() {
 
       return true
     },
-    [auth, buckets, connectingId, toast],
+    [auth, buckets, connectingId, passwordPrompt?.server.id, toast],
   )
 
   // Restore from URL hash (or last active server) after reload
@@ -164,7 +162,7 @@ export function Shell() {
     const server = servers.find((s) => s.id === serverId)
     if (!server) {
       serversStore.setActiveServer(null)
-      writeLocationHash({ screen: 'welcome' })
+      writeLocationHash({ screen: 'welcome' }, 'replace')
       return
     }
     void connectToServer(server, {
@@ -173,24 +171,6 @@ export function Shell() {
     })
   }, [connectToServer, connected, connectingId, servers, serversStore])
 
-  // Keep hash in sync with current view
-  useEffect(() => {
-    if (!connected) return
-    syncHash(activeServer?.id, {
-      connected,
-      openBucketName,
-      bucketTab,
-      showAdmins,
-    })
-  }, [
-    activeServer?.id,
-    bucketTab,
-    connected,
-    openBucketName,
-    showAdmins,
-    syncHash,
-  ])
-
   const disconnect = useCallback(async () => {
     await auth.disconnect()
     setConnected(false)
@@ -198,8 +178,61 @@ export function Shell() {
     setBucketTab('overview')
     setShowAdmins(false)
     setMobileView('servers')
-    writeLocationHash({ screen: 'welcome' })
+    writeLocationHash({ screen: 'welcome' }, 'replace')
   }, [auth])
+
+  const hashReadyRef = useRef(false)
+
+  // Keep hash in sync with current view (push so Back/Forward work)
+  useEffect(() => {
+    if (!connected) {
+      hashReadyRef.current = false
+      return
+    }
+    writeLocationHash(
+      viewToLocation({
+        connected,
+        serverId: activeServer?.id,
+        openBucketName,
+        bucketTab,
+        showAdmins,
+      }),
+      hashReadyRef.current ? 'push' : 'replace',
+    )
+    hashReadyRef.current = true
+  }, [activeServer?.id, bucketTab, connected, openBucketName, showAdmins])
+
+  useEffect(() => {
+    const onPop = () => {
+      const loc = parseLocationHash()
+      if (!loc || loc.screen === 'welcome') {
+        if (connected) void disconnect()
+        else {
+          setOpenBucketName(null)
+          setShowAdmins(false)
+          setMobileView('servers')
+        }
+        return
+      }
+      const server = servers.find((s) => s.id === loc.serverId)
+      if (!server) {
+        writeLocationHash({ screen: 'welcome' }, 'replace')
+        return
+      }
+      if (connected && activeServer?.id === server.id) {
+        applyLocation(loc, {
+          setOpenBucketName,
+          setBucketTab,
+          setShowAdmins,
+          setMobileView,
+        })
+        return
+      }
+      void connectToServer(server, { restore: loc, resetView: false })
+    }
+    window.addEventListener('popstate', onPop)
+    return () => window.removeEventListener('popstate', onPop)
+  }, [activeServer?.id, connected, connectToServer, disconnect, servers])
 
   const openBucket = (name: string) => {
     setOpenBucketName(name)
@@ -220,6 +253,30 @@ export function Shell() {
     setBucketTab(t)
     setShowAdmins(false)
   }
+
+  const shellDialogs = (
+    <>
+      <AddServerDialog open={addOpen} onClose={() => setAddOpen(false)} />
+      <ConnectPasswordDialog
+        open={!!passwordPrompt}
+        server={passwordPrompt?.server ?? null}
+        error={promptError}
+        busy={connectingId === passwordPrompt?.server.id}
+        onClose={() => {
+          setPasswordPrompt(null)
+          setPromptError(null)
+        }}
+        onSubmit={(password, remember) => {
+          if (!passwordPrompt) return
+          void connectToServer(passwordPrompt.server, {
+            restore: passwordPrompt.restore,
+            resetView: passwordPrompt.resetView,
+            auth: { password, rememberPassword: remember },
+          })
+        }}
+      />
+    </>
+  )
 
   // Desktop layout
   if (isWide) {
@@ -261,7 +318,7 @@ export function Shell() {
             <DashboardScreen onOpenBucket={openBucket} />
           )}
         </div>
-        <AddServerDialog open={addOpen} onClose={() => setAddOpen(false)} />
+        {shellDialogs}
       </div>
     )
   }
@@ -277,6 +334,7 @@ export function Shell() {
           onBack={closeBucket}
           showMobileTabs
         />
+        {shellDialogs}
       </div>
     )
   }
@@ -291,6 +349,7 @@ export function Shell() {
             setMobileView('dashboard')
           }}
         />
+        {shellDialogs}
       </div>
     )
   }
@@ -320,6 +379,7 @@ export function Shell() {
           }
         />
         <DashboardScreen onOpenBucket={openBucket} />
+        {shellDialogs}
       </div>
     )
   }
@@ -378,7 +438,7 @@ export function Shell() {
           </div>
         )}
       </div>
-      <AddServerDialog open={addOpen} onClose={() => setAddOpen(false)} />
+      {shellDialogs}
     </div>
   )
 }

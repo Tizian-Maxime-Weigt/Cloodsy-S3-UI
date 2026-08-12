@@ -43,13 +43,39 @@ export function locationToHash(loc: AppLocation): string {
   return `#/s/${encodeURIComponent(loc.serverId)}/b/${encodeURIComponent(loc.bucket)}/${loc.tab}`
 }
 
-export function writeLocationHash(loc: AppLocation) {
+export function viewToLocation(state: {
+  connected: boolean
+  serverId?: string | null
+  openBucketName: string | null
+  bucketTab: BucketTab
+  showAdmins: boolean
+}): AppLocation {
+  if (!state.connected || !state.serverId) return { screen: 'welcome' }
+  if (state.showAdmins) return { screen: 'admins', serverId: state.serverId }
+  if (state.openBucketName) {
+    return {
+      screen: 'bucket',
+      serverId: state.serverId,
+      bucket: state.openBucketName,
+      tab: state.bucketTab,
+    }
+  }
+  return { screen: 'dashboard', serverId: state.serverId }
+}
+
+function hrefForHash(hash: string): string {
+  const { pathname, search } = window.location
+  return `${pathname}${search}${hash}`
+}
+
+/** Write the location hash. `push` creates a history entry (Back/Forward). */
+export function writeLocationHash(
+  loc: AppLocation,
+  mode: 'push' | 'replace' = 'push',
+) {
   const next = locationToHash(loc)
   if (window.location.hash === next) return
-  if (!next) {
-    const { pathname, search } = window.location
-    window.history.replaceState(null, '', `${pathname}${search}`)
-    return
-  }
-  window.history.replaceState(null, '', next)
+  const href = hrefForHash(next)
+  if (mode === 'replace') window.history.replaceState(null, '', href)
+  else window.history.pushState(null, '', href)
 }

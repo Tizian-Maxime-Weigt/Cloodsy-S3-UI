@@ -9,11 +9,13 @@ import {
 import type { ServerConnection } from '../types'
 import { generateId } from '../lib/format'
 import {
+  clearPersistedPassword,
   clearToken as clearTokenStorage,
   deleteServerSecrets,
   getLastActiveServerId,
   getPassword as getPasswordStorage,
   getToken as getTokenStorage,
+  hasPersistedPassword as hasPersistedPasswordStorage,
   loadServers,
   saveServers,
   setLastActiveServerId,
@@ -25,10 +27,19 @@ interface ServerStoreValue {
   servers: ServerConnection[]
   activeServer: ServerConnection | null
   setActiveServer: (server: ServerConnection | null) => void
-  addServer: (data: Omit<ServerConnection, 'id'>, password: string) => ServerConnection
-  updateServer: (server: ServerConnection, password?: string | null) => void
+  addServer: (
+    data: Omit<ServerConnection, 'id'>,
+    password: string,
+    persistPassword?: boolean,
+  ) => ServerConnection
+  updateServer: (
+    server: ServerConnection,
+    opts?: { password?: string | null; persistPassword?: boolean },
+  ) => void
   deleteServer: (id: string) => void
   getPassword: (id: string) => string | null
+  hasPersistedPassword: (id: string) => boolean
+  setPassword: (id: string, password: string, persist: boolean) => void
   getToken: (id: string) => string | null
   saveToken: (id: string, token: string) => void
   clearToken: (id: string) => void
@@ -47,28 +58,41 @@ export function ServerStoreProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const addServer = useCallback(
-    (data: Omit<ServerConnection, 'id'>, password: string) => {
+    (
+      data: Omit<ServerConnection, 'id'>,
+      password: string,
+      persistPassword = false,
+    ) => {
       const server: ServerConnection = { ...data, id: generateId() }
       setServers((prev) => {
         const next = [...prev, server]
         saveServers(next)
         return next
       })
-      setPasswordStorage(server.id, password)
+      setPasswordStorage(server.id, password, persistPassword)
       return server
     },
     [],
   )
 
   const updateServer = useCallback(
-    (server: ServerConnection, password?: string | null) => {
+    (
+      server: ServerConnection,
+      opts?: { password?: string | null; persistPassword?: boolean },
+    ) => {
       setServers((prev) => {
         const next = prev.map((s) => (s.id === server.id ? server : s))
         saveServers(next)
         return next
       })
-      if (password != null && password !== '') {
-        setPasswordStorage(server.id, password)
+      if (opts?.password) {
+        setPasswordStorage(
+          server.id,
+          opts.password,
+          opts.persistPassword ?? false,
+        )
+      } else if (opts?.persistPassword === false) {
+        clearPersistedPassword(server.id)
       }
       setActiveServerState((active) => (active?.id === server.id ? server : active))
     },
@@ -100,6 +124,8 @@ export function ServerStoreProvider({ children }: { children: ReactNode }) {
       updateServer,
       deleteServer,
       getPassword: getPasswordStorage,
+      hasPersistedPassword: hasPersistedPasswordStorage,
+      setPassword: setPasswordStorage,
       getToken: getTokenStorage,
       saveToken: setTokenStorage,
       clearToken: clearTokenStorage,

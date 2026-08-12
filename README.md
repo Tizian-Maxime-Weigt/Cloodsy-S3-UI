@@ -100,7 +100,7 @@ add_header Permissions-Policy "camera=(), microphone=(), geolocation=(), payment
 
 ## Security notes
 
-- Passwords and session tokens are stored in **browser `localStorage`** (same model as other browser admin UIs). Anyone with physical access to the browser profile, or a successful XSS on this origin, can read them. Serve the UI only over HTTPS and keep the origin dedicated.
+- Session tokens are stored in browser `localStorage`. Admin passwords are **not** saved unless you enable **Remember password** on the server dialog. Anyone with access to the browser profile, or a successful XSS on this origin, can read persisted secrets. Serve the UI only over HTTPS and keep the origin dedicated.
 - Production builds do **not** emit debug logs. The Vite debug sink (`/__cloodsy_debug`) exists only in `npm run dev`.
 - Admin and S3 URLs must be `http` or `https` (other schemes are rejected).
 - Dependency advisories: `npm run audit` (also runs in CI).
@@ -110,7 +110,7 @@ add_header Permissions-Policy "camera=(), microphone=(), geolocation=(), payment
 | Layer | Role |
 |-------|------|
 | `src/api/client.ts` | `GET/POST/PUT/DELETE` → `{baseUrl}/admin{path}`, Bearer token, 10s timeout |
-| `src/store/ServerStore.tsx` | Server list + passwords/tokens in `localStorage` |
+| `src/store/ServerStore.tsx` | Server list + optional passwords/tokens in `localStorage` |
 | `src/store/auth.tsx` | Connect / login / logout / 401 recovery |
 | `src/store/buckets.tsx` | Buckets, objects, credentials, lifecycle, webhooks, admins, status |
 
