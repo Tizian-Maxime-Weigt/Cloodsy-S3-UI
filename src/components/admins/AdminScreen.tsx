@@ -66,6 +66,12 @@ export function AdminScreen({
             icon={KeyRound}
             title="No admins"
             description="Create an admin user to manage this server."
+            action={
+              <Button onClick={() => setCreateOpen(true)}>
+                <Plus size={14} />
+                Create admin
+              </Button>
+            }
           />
         ) : (
           admins.map((admin) => {
@@ -81,6 +87,7 @@ export function AdminScreen({
                     className="btn-icon"
                     type="button"
                     title="Reset password"
+                    aria-label={`Reset password for ${admin.username}`}
                     onClick={() => setResetUser(admin.username)}
                   >
                     <RotateCcw size={14} />
@@ -89,6 +96,7 @@ export function AdminScreen({
                     className="btn-icon is-danger"
                     type="button"
                     title="Delete"
+                    aria-label={`Delete admin ${admin.username}`}
                     disabled={!canDelete}
                     onClick={() => setDeleteUser(admin.username)}
                   >

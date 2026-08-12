@@ -46,12 +46,12 @@ export function BucketDetailScreen({
 
   return (
     <div className="app-content">
-      {!embedded || showMobileTabs ? (
+      {!embedded ? (
         <TopBar
           title={bucketName}
           left={
             onBack ? (
-              <button className="btn-icon" onClick={onBack} type="button">
+              <button className="btn-icon" onClick={onBack} type="button" aria-label="Back">
                 <ArrowLeft size={18} />
               </button>
             ) : null
@@ -61,6 +61,7 @@ export function BucketDetailScreen({
               variant="ghost"
               size="sm"
               onClick={() => void fetchBucketDetail(bucketName)}
+              aria-label="Refresh"
             >
               <RefreshCw size={14} />
             </Button>
@@ -69,17 +70,23 @@ export function BucketDetailScreen({
       ) : null}
 
       {showMobileTabs ? (
-        <div className="tab-bar">
-          {BUCKET_TABS.map((t) => (
-            <button
-              key={t.id}
-              type="button"
-              className={tab === t.id ? 'is-active' : ''}
-              onClick={() => onTabChange(t.id)}
-            >
-              {t.label}
-            </button>
-          ))}
+        <div className="tab-bar" role="tablist" aria-label="Bucket sections">
+          {BUCKET_TABS.map((t) => {
+            const Icon = t.icon
+            return (
+              <button
+                key={t.id}
+                type="button"
+                role="tab"
+                aria-selected={tab === t.id}
+                className={tab === t.id ? 'is-active' : ''}
+                onClick={() => onTabChange(t.id)}
+              >
+                <Icon size={14} />
+                {t.label}
+              </button>
+            )
+          })}
         </div>
       ) : null}
 
@@ -97,11 +104,28 @@ export function BucketDetailScreen({
               Refresh
             </Button>
           </div>
+        ) : showMobileTabs ? (
+          <div className="page-header" style={{ padding: 0, marginTop: -8 }}>
+            <Button variant="ghost" size="sm" onClick={onBack} aria-label="Back to dashboard">
+              <ArrowLeft size={14} />
+              Buckets
+            </Button>
+            <div className="spacer" />
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => void fetchBucketDetail(bucketName)}
+              aria-label="Refresh"
+            >
+              <RefreshCw size={14} />
+            </Button>
+          </div>
         ) : null}
 
         {isLoading && !bucket ? (
           <div className="empty-state">
             <div className="spinner" />
+            <p>Loading bucket…</p>
           </div>
         ) : !bucket ? (
           <div className="empty-state">Bucket not found</div>

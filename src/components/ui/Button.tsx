@@ -12,11 +12,13 @@ export function Button({
   variant = 'primary',
   size = 'md',
   className = '',
+  type = 'button',
   children,
   ...rest
 }: ButtonProps) {
   return (
     <button
+      type={type}
       className={`btn btn-${variant} ${size === 'sm' ? 'btn-sm' : ''} ${className}`.trim()}
       {...rest}
     >

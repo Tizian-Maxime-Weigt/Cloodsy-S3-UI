@@ -32,7 +32,13 @@ export function LifecycleTab({ bucketName }: { bucketName: string }) {
       {lifecycleRules.length === 0 ? (
         <EmptyState
           title="No lifecycle rules"
-          description="Add rules to auto-expire objects by age and prefix."
+          description="Expire objects automatically after a number of days, optionally limited to a prefix."
+          action={
+            <Button onClick={() => setCreateOpen(true)}>
+              <Plus size={14} />
+              Add rule
+            </Button>
+          }
         />
       ) : (
         lifecycleRules.map((rule) => (
@@ -46,6 +52,7 @@ export function LifecycleTab({ bucketName }: { bucketName: string }) {
               <button
                 className="btn-icon is-danger"
                 type="button"
+                aria-label={`Delete rule ${rule.name || rule.prefix || 'all objects'}`}
                 onClick={() => setDeletePrefix(rule.prefix)}
               >
                 <Trash2 size={14} />

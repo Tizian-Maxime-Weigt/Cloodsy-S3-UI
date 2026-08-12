@@ -31,7 +31,13 @@ export function WebhooksTab({ bucketName }: { bucketName: string }) {
       {webhooks.length === 0 ? (
         <EmptyState
           title="No webhooks"
-          description="Configure event notification endpoints for this bucket."
+          description="Notify an HTTP endpoint when objects are created, updated, or deleted."
+          action={
+            <Button onClick={() => setCreateOpen(true)}>
+              <Plus size={14} />
+              Add webhook
+            </Button>
+          }
         />
       ) : (
         webhooks.map((wh) => (
@@ -49,6 +55,7 @@ export function WebhooksTab({ bucketName }: { bucketName: string }) {
               <button
                 className="btn-icon is-danger"
                 type="button"
+                aria-label={`Delete webhook ${wh.name || wh.url}`}
                 onClick={() => setDeleteId(wh.id)}
               >
                 <Trash2 size={14} />

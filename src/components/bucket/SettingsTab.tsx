@@ -66,10 +66,13 @@ export function SettingsTab({ bucket }: { bucket: Bucket }) {
           <div className="settings-row__text">
             <div className="settings-row__title">Versioning</div>
             <div className="settings-row__desc">
-              {isVersioningEnabled ? 'Enabled' : 'Suspended'}
+              {isVersioningEnabled
+                ? 'Keep previous versions when objects are overwritten'
+                : 'Overwrites replace the current object'}
             </div>
           </div>
           <Switch
+            label="Versioning"
             checked={isVersioningEnabled}
             onChange={(next) => {
               void setVersioning(bucket.name, next ? 'Enabled' : 'Suspended').then((ok) => {
@@ -87,6 +90,7 @@ export function SettingsTab({ bucket }: { bucket: Bucket }) {
             </div>
           </div>
           <Switch
+            label="Public read"
             checked={bucket.publicRead}
             onChange={(next) => {
               void setPublicRead(bucket.name, next).then((ok) => {
@@ -104,6 +108,7 @@ export function SettingsTab({ bucket }: { bucket: Bucket }) {
             </div>
           </div>
           <Switch
+            label="WebDAV access"
             checked={bucket.webdavEnabled}
             onChange={(next) => {
               void setWebdavEnabled(bucket.name, next).then((ok) => {
@@ -144,7 +149,7 @@ export function SettingsTab({ bucket }: { bucket: Bucket }) {
           </div>
           <div className="secret-row">
             <code className="mono">{`${webdavMountUrl}${bucket.name}`}</code>
-            <button className="btn-icon" type="button" onClick={() => void copyMount()}>
+            <button className="btn-icon" type="button" onClick={() => void copyMount()} aria-label="Copy WebDAV URL">
               <Copy size={14} />
             </button>
           </div>

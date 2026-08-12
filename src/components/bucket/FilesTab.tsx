@@ -16,6 +16,7 @@ import {
   TextCursorInput,
   Trash2,
   Upload,
+  X,
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
@@ -49,6 +50,7 @@ import type { S3Object } from '../../types'
 import { PromptModal, TextEditModal, ImagePreviewModal } from '../dialogs/FileDialogs'
 import { Button } from '../ui/Button'
 import { EmptyState } from '../ui/EmptyState'
+import { SearchField } from '../ui/Field'
 import { ConfirmModal } from '../ui/Modal'
 
 function iconFor(key: string) {
@@ -129,6 +131,11 @@ export function FilesTab({ bucketName }: { bucketName: string }) {
     error: string | null
     revoke?: string
   } | null>(null)
+  const [query, setQuery] = useState('')
+  const [showUrlBanner, setShowUrlBanner] = useState(true)
+  const [upload, setUpload] = useState<{ done: number; total: number; name: string } | null>(
+    null,
+  )
 
   const publicRead =
     selectedBucket?.name === bucketName ? selectedBucket.publicRead : false
@@ -142,6 +149,7 @@ export function FilesTab({ bucketName }: { bucketName: string }) {
     void fetchObjects(bucketName, prefix)
     setSelected(new Set())
     setMenuKey(null)
+    setQuery('')
   }, [bucketName, prefix, fetchObjects])
 
   useEffect(() => {
@@ -302,8 +310,15 @@ export function FilesTab({ bucketName }: { bucketName: string }) {
   useEffect(() => {
     if (!menuKey) return
     const close = () => setMenuKey(null)
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') close()
+    }
     window.addEventListener('click', close)
-    return () => window.removeEventListener('click', close)
+    window.addEventListener('keydown', onKey)
+    return () => {
+      window.removeEventListener('click', close)
+      window.removeEventListener('keydown', onKey)
+    }
   }, [menuKey])
 
   const crumbs = useMemo(() => {
@@ -320,11 +335,25 @@ export function FilesTab({ bucketName }: { bucketName: string }) {
     })
   }
 
-  const allKeys = useMemo(() => {
+  const visiblePrefixes = useMemo(() => {
     const prefixes = objectList?.prefixes ?? []
-    const objects = (objectList?.objects ?? []).map((o) => o.key)
-    return [...prefixes, ...objects]
-  }, [objectList])
+    const q = query.trim().toLowerCase()
+    if (!q) return prefixes
+    return prefixes.filter((p) =>
+      p.slice(prefix.length).replace(/\/$/, '').toLowerCase().includes(q),
+    )
+  }, [objectList, prefix, query])
+
+  const visibleObjects = useMemo(() => {
+    const objects = objectList?.objects ?? []
+    const q = query.trim().toLowerCase()
+    if (!q) return objects
+    return objects.filter((o) => fileNameFromKey(o.key).toLowerCase().includes(q))
+  }, [objectList, query])
+
+  const allKeys = useMemo(() => {
+    return [...visiblePrefixes, ...visibleObjects.map((o) => o.key)]
+  }, [visibleObjects, visiblePrefixes])
 
   const allSelected = allKeys.length > 0 && allKeys.every((k) => selected.has(k))
 
@@ -380,6 +409,7 @@ export function FilesTab({ bucketName }: { bucketName: string }) {
     let ok = 0
     try {
       for (const file of list) {
+        setUpload({ done: ok, total: list.length, name: file.name })
         const key = `${prefix}${file.name}`
         await s3Upload(
           client,
@@ -400,6 +430,7 @@ export function FilesTab({ bucketName }: { bucketName: string }) {
       toast(e instanceof S3OpsError ? e.message : 'Upload failed', 'error')
     } finally {
       setBusy(false)
+      setUpload(null)
       if (fileInputRef.current) fileInputRef.current.value = ''
     }
   }
@@ -566,6 +597,11 @@ export function FilesTab({ bucketName }: { bucketName: string }) {
             </span>
           ))}
         </div>
+        <SearchField
+          value={query}
+          onChange={setQuery}
+          placeholder="Search this folder"
+        />
         <div className="spacer" />
         <div className="files-actions">
           {selected.size > 0 ? (
@@ -614,30 +650,51 @@ export function FilesTab({ bucketName }: { bucketName: string }) {
         <div className="banner banner--warn">{s3Error}</div>
       ) : null}
 
-      {s3Endpoint ? (
-        <div className={`banner ${publicRead ? 'banner--ok' : 'banner--warn'}`}>
+      {upload ? (
+        <div className="panel files-progress">
+          <div className="spinner spinner--sm" aria-hidden />
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontWeight: 500, marginBottom: 2 }}>
-              {publicRead ? 'Public object URLs' : 'Object URLs (Public read is off)'}
-            </div>
-            <code className="public-url-sample">
-              {publicObjectUrl(s3Endpoint, bucketName, prefix ? `${prefix}…` : '…')}
-            </code>
+            Uploading {upload.name} ({Math.min(upload.done + 1, upload.total)} of {upload.total})
           </div>
+          <div className="progress files-progress__bar">
+            <div
+              className="progress__bar"
+              style={{ width: `${(upload.done / Math.max(upload.total, 1)) * 100}%` }}
+            />
+          </div>
+        </div>
+      ) : null}
+
+      {s3Endpoint && showUrlBanner ? (
+        <div className={`banner banner--compact ${publicRead ? 'banner--ok' : 'banner--warn'}`}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            {publicRead
+              ? 'Anonymous access is on. Object links work without a key.'
+              : 'Public read is off. Links still work for signed/credential access.'}
+          </div>
+          <button
+            className="btn-icon banner__dismiss"
+            type="button"
+            aria-label="Dismiss"
+            onClick={() => setShowUrlBanner(false)}
+          >
+            <X size={14} />
+          </button>
         </div>
       ) : null}
 
       {objectsLoading && !objectList ? (
         <div className="empty-state">
           <div className="spinner" />
+          <p>Loading files…</p>
         </div>
       ) : empty ? (
         <EmptyState
           title="Empty folder"
           description={
             canWrite && s3Ready
-              ? 'Upload files or create a folder to get started.'
-              : 'No objects in this prefix.'
+              ? 'Drop files here, or use Upload / New folder.'
+              : 'No objects in this folder.'
           }
           action={
             canWrite && s3Ready ? (
@@ -646,6 +703,16 @@ export function FilesTab({ bucketName }: { bucketName: string }) {
                 Upload files
               </Button>
             ) : undefined
+          }
+        />
+      ) : visiblePrefixes.length === 0 && visibleObjects.length === 0 ? (
+        <EmptyState
+          title="No matching files"
+          description={`Nothing in this folder matches “${query.trim()}”.`}
+          action={
+            <Button variant="outline" onClick={() => setQuery('')}>
+              Clear search
+            </Button>
           }
         />
       ) : (
@@ -657,6 +724,7 @@ export function FilesTab({ bucketName }: { bucketName: string }) {
                   <input
                     type="checkbox"
                     checked={allSelected}
+                    aria-label="Select all"
                     onChange={() => {
                       if (allSelected) setSelected(new Set())
                       else setSelected(new Set(allKeys))
@@ -665,13 +733,13 @@ export function FilesTab({ bucketName }: { bucketName: string }) {
                 </th>
                 <th>Name</th>
                 <th>Size</th>
-                <th>Type</th>
-                <th>Modified</th>
+                <th className="col-hide-sm">Type</th>
+                <th className="col-hide-sm">Modified</th>
                 <th style={{ width: 96 }} />
               </tr>
             </thead>
             <tbody>
-              {objectList!.prefixes.map((p) => {
+              {visiblePrefixes.map((p) => {
                 const name = p.slice(prefix.length).replace(/\/$/, '')
                 return (
                   <tr key={p} className="is-clickable">
@@ -679,6 +747,7 @@ export function FilesTab({ bucketName }: { bucketName: string }) {
                       <input
                         type="checkbox"
                         checked={selected.has(p)}
+                        aria-label={`Select folder ${name}`}
                         onChange={() => toggle(p)}
                         onClick={(e) => e.stopPropagation()}
                       />
@@ -690,13 +759,14 @@ export function FilesTab({ bucketName }: { bucketName: string }) {
                       </span>
                     </td>
                     <td>—</td>
-                    <td>Dir</td>
-                    <td>—</td>
+                    <td className="col-hide-sm">Folder</td>
+                    <td className="col-hide-sm">—</td>
                     <td>
                       <button
                         className="btn-icon is-danger"
                         type="button"
                         title="Delete folder"
+                        aria-label={`Delete folder ${name}`}
                         disabled={busy}
                         onClick={() => setConfirm({ type: 'prefix', keys: [p] })}
                       >
@@ -706,7 +776,7 @@ export function FilesTab({ bucketName }: { bucketName: string }) {
                   </tr>
                 )
               })}
-              {objectList!.objects.map((obj) => {
+              {visibleObjects.map((obj) => {
                 const Icon = iconFor(obj.key)
                 const editable = isTextEditable(obj.key, obj.contentType, obj.size)
                 const image = isImageKey(obj.key, obj.contentType)
@@ -717,6 +787,7 @@ export function FilesTab({ bucketName }: { bucketName: string }) {
                       <input
                         type="checkbox"
                         checked={selected.has(obj.key)}
+                        aria-label={`Select ${fileNameFromKey(obj.key)}`}
                         onChange={() => toggle(obj.key)}
                       />
                     </td>
@@ -742,14 +813,15 @@ export function FilesTab({ bucketName }: { bucketName: string }) {
                       </a>
                     </td>
                     <td>{formatBytes(obj.size)}</td>
-                    <td>{obj.contentType || fileExtension(obj.key) || '—'}</td>
-                    <td>{formatDate(obj.lastModified)}</td>
+                    <td className="col-hide-sm">{obj.contentType || fileExtension(obj.key) || '—'}</td>
+                    <td className="col-hide-sm">{formatDate(obj.lastModified)}</td>
                     <td>
                       <div className="row-actions">
                         <button
                           className="btn-icon"
                           type="button"
                           title="Copy public URL"
+                          aria-label={`Copy URL for ${fileNameFromKey(obj.key)}`}
                           disabled={!href}
                           onClick={() => void copyPublicUrl(obj.key)}
                         >
@@ -759,6 +831,7 @@ export function FilesTab({ bucketName }: { bucketName: string }) {
                           className="btn-icon"
                           type="button"
                           title="Download"
+                          aria-label={`Download ${fileNameFromKey(obj.key)}`}
                           disabled={busy || !s3Ready}
                           onClick={() => void downloadObject(obj)}
                         >
@@ -769,6 +842,7 @@ export function FilesTab({ bucketName }: { bucketName: string }) {
                             className="btn-icon"
                             type="button"
                             title="More"
+                            aria-label={`More actions for ${fileNameFromKey(obj.key)}`}
                             disabled={busy}
                             onClick={(e) => {
                               e.stopPropagation()
@@ -853,6 +927,12 @@ export function FilesTab({ bucketName }: { bucketName: string }) {
           </table>
         </div>
       )}
+
+      {busy && !upload ? (
+        <div className="busy-overlay" aria-hidden>
+          <div className="spinner" />
+        </div>
+      ) : null}
 
       {objectList?.truncated ? (
         <div className="files-more">

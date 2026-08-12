@@ -68,3 +68,19 @@ export function compareVersions(a: string, b: string): number {
 export function generateId(): string {
   return crypto.randomUUID()
 }
+
+export type QuotaTone = 'ok' | 'warn' | 'danger'
+
+export function quotaTone(usageBytes: number, quotaBytes: number): QuotaTone | null {
+  if (quotaBytes <= 0) return null
+  const pct = usageBytes / quotaBytes
+  if (pct >= 0.95) return 'danger'
+  if (pct >= 0.8) return 'warn'
+  return 'ok'
+}
+
+export function formatPermission(permission: string): string {
+  if (permission === 'read-write') return 'Read & write'
+  if (permission === 'read-only') return 'Read only'
+  return permission
+}

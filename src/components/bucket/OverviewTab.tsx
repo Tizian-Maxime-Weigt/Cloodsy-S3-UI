@@ -1,6 +1,6 @@
 import { Copy, ExternalLink, HardDrive, KeyRound, Layers, Link2 } from 'lucide-react'
 import { deriveS3Endpoint, publicBucketUrl } from '../../api/s3'
-import { formatBytes, formatDate } from '../../lib/format'
+import { formatBytes, formatDate, quotaTone } from '../../lib/format'
 import { useAuth } from '../../store/auth'
 import { useServers } from '../../store/ServerStore'
 import { useToast } from '../../store/toast'
@@ -34,6 +34,9 @@ export function OverviewTab({ bucket }: { bucket: Bucket }) {
   const pct = hasQuota
     ? Math.min(100, (bucket.usageBytes / bucket.quotaBytes) * 100)
     : 0
+  const tone = quotaTone(bucket.usageBytes, bucket.quotaBytes)
+  const barClass =
+    tone === 'danger' ? 'progress__bar--danger' : tone === 'warn' ? 'progress__bar--warn' : ''
   const storagePath = bucket.storagePath || bucket.storageDir || null
   const versioningLabel = bucket.versioning
     ? bucket.versioning.charAt(0).toUpperCase() + bucket.versioning.slice(1)
@@ -89,10 +92,13 @@ export function OverviewTab({ bucket }: { bucket: Bucket }) {
                 {formatBytes(bucket.usageBytes)} of{' '}
                 {formatBytes(bucket.quotaBytes)} used
               </span>
-              <span>{pct < 1 && bucket.usageBytes > 0 ? '<1' : Math.round(pct)}%</span>
+              <span>
+                {pct < 1 && bucket.usageBytes > 0 ? '<1' : Math.round(pct)}%
+                {tone === 'danger' ? ' — almost full' : tone === 'warn' ? ' — running low' : ''}
+              </span>
             </div>
             <div className="progress progress--lg">
-              <div className="progress__bar" style={{ width: `${pct}%` }} />
+              <div className={`progress__bar ${barClass}`} style={{ width: `${pct}%` }} />
             </div>
           </div>
         ) : (

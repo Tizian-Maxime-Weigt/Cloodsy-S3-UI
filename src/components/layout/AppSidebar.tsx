@@ -41,6 +41,10 @@ export function AppSidebar({
   onBucketClose,
   showAdmins,
   onAdminsTap,
+  connectingId,
+  showBucketNav = true,
+  open = true,
+  onNavigate,
 }: {
   activeServerId: string | null
   onServerTap: (server: ServerConnection) => void
@@ -51,6 +55,10 @@ export function AppSidebar({
   onBucketClose?: () => void
   showAdmins: boolean
   onAdminsTap?: () => void
+  connectingId?: string | null
+  showBucketNav?: boolean
+  open?: boolean
+  onNavigate?: () => void
 }) {
   const { servers, deleteServer } = useServers()
   const theme = useTheme()
@@ -61,12 +69,21 @@ export function AppSidebar({
   const ThemeIcon = theme.mode === 'light' ? Sun : theme.mode === 'dark' ? Moon : Monitor
 
   return (
-    <aside className="sidebar">
-      {openBucketName ? (
+    <aside className={`sidebar ${open ? 'is-open' : ''}`} aria-label="Sidebar">
+      {showBucketNav && openBucketName ? (
         <>
           <div style={{ padding: '8px 4px 4px 4px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 2, padding: '0 8px' }}>
-              <button className="btn-icon" onClick={onBucketClose} title="Back to dashboard">
+              <button
+                className="btn-icon"
+                onClick={() => {
+                  onBucketClose?.()
+                  onNavigate?.()
+                }}
+                title="Back to dashboard"
+                aria-label="Back to dashboard"
+                type="button"
+              >
                 <ArrowLeft size={18} />
               </button>
               <strong
@@ -80,14 +97,17 @@ export function AppSidebar({
                 {openBucketName}
               </strong>
             </div>
-            <div style={{ padding: '4px 8px 8px' }}>
+            <nav style={{ padding: '4px 8px 8px' }} aria-label="Bucket sections">
               {BUCKET_TABS.map((tab) => {
                 const Icon = tab.icon
                 return (
                   <button
                     key={tab.id}
                     className={`nav-item ${activeBucketTab === tab.id ? 'is-active' : ''}`}
-                    onClick={() => onBucketTabChanged(tab.id)}
+                    onClick={() => {
+                      onBucketTabChanged(tab.id)
+                      onNavigate?.()
+                    }}
                     type="button"
                   >
                     <Icon size={16} />
@@ -95,7 +115,7 @@ export function AppSidebar({
                   </button>
                 )
               })}
-            </div>
+            </nav>
           </div>
           <div style={{ borderTop: '1px solid var(--border)' }} />
         </>
@@ -104,93 +124,103 @@ export function AppSidebar({
       <div className="sidebar__section-label">
         SERVERS
         <span className="spacer" />
-        <button className="btn-icon" onClick={() => setAddOpen(true)} title="Add Server">
+        <button
+          className="btn-icon"
+          onClick={() => setAddOpen(true)}
+          title="Add Server"
+          aria-label="Add server"
+          type="button"
+        >
           <Plus size={16} />
         </button>
       </div>
 
       <div className="sidebar__scroll">
-        {servers.map((server) => {
-          const isActive = server.id === activeServerId
-          return (
-            <div key={server.id} className="server-item">
-              <button
-                className={`nav-item ${isActive ? 'is-active' : ''}`}
-                onClick={() => onServerTap(server)}
-                type="button"
+        {servers.length === 0 ? (
+          <p className="field-hint" style={{ padding: '8px 10px' }}>
+            No servers yet. Add an admin endpoint to get started.
+          </p>
+        ) : (
+          servers.map((server) => {
+            const isActive = server.id === activeServerId
+            const isConnecting = connectingId === server.id
+            return (
+              <div
+                key={server.id}
+                className={`server-item ${isActive ? 'is-active' : ''}`}
               >
-                <span className={`nav-item__dot ${isActive ? 'is-online' : ''}`} />
-                <span
-                  style={{
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'flex-start',
-                    gap: 1,
-                    minWidth: 0,
-                    flex: 1,
+                <button
+                  className={`nav-item server-item__main ${isActive ? 'is-active' : ''}`}
+                  onClick={() => {
+                    onServerTap(server)
+                    onNavigate?.()
                   }}
+                  type="button"
+                  disabled={!!connectingId}
+                  aria-current={isActive ? 'true' : undefined}
                 >
+                  {isConnecting ? (
+                    <span className="spinner spinner--sm" aria-hidden />
+                  ) : (
+                    <span
+                      className={`nav-item__dot ${isActive ? 'is-online' : ''}`}
+                      title={isActive ? 'Connected' : 'Saved'}
+                    />
+                  )}
                   <span
                     style={{
                       overflow: 'hidden',
                       textOverflow: 'ellipsis',
                       whiteSpace: 'nowrap',
-                      width: '100%',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'flex-start',
+                      gap: 1,
+                      minWidth: 0,
+                      flex: 1,
                     }}
                   >
-                    {server.name}
+                    <span
+                      style={{
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                        width: '100%',
+                      }}
+                    >
+                      {server.name}
+                    </span>
+                    <span className="server-item__meta">
+                      {server.s3Url?.trim()
+                        ? server.s3Url.replace(/^https?:\/\//, '')
+                        : server.url.replace(/^https?:\/\//, '')}
+                    </span>
                   </span>
-                  <span className="server-item__meta">
-                    {server.s3Url?.trim()
-                      ? server.s3Url.replace(/^https?:\/\//, '')
-                      : server.url.replace(/^https?:\/\//, '')}
-                  </span>
-                </span>
+                </button>
                 <span className="server-item__actions">
-                  <span
+                  <button
                     className="btn-icon"
-                    role="button"
-                    tabIndex={0}
-                    title="Edit"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      setEditServer(server)
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.stopPropagation()
-                        setEditServer(server)
-                      }
-                    }}
+                    type="button"
+                    title="Edit server"
+                    aria-label={`Edit ${server.name}`}
+                    onClick={() => setEditServer(server)}
                   >
                     <Pencil size={14} />
-                  </span>
-                  <span
+                  </button>
+                  <button
                     className="btn-icon is-danger"
-                    role="button"
-                    tabIndex={0}
-                    title="Delete"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      setDeleteTarget(server)
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.stopPropagation()
-                        setDeleteTarget(server)
-                      }
-                    }}
+                    type="button"
+                    title="Delete server"
+                    aria-label={`Delete ${server.name}`}
+                    onClick={() => setDeleteTarget(server)}
                   >
                     <Trash2 size={14} />
-                  </span>
+                  </button>
                 </span>
-              </button>
-            </div>
-          )
-        })}
+              </div>
+            )
+          })
+        )}
       </div>
 
       <div className="sidebar__footer">
@@ -201,7 +231,10 @@ export function AppSidebar({
             </div>
             <button
               className={`nav-item ${showAdmins ? 'is-active' : ''}`}
-              onClick={onAdminsTap}
+              onClick={() => {
+                onAdminsTap()
+                onNavigate?.()
+              }}
               type="button"
             >
               <Shield size={16} />
@@ -210,13 +243,25 @@ export function AppSidebar({
           </>
         ) : null}
 
-        <button className="nav-item" onClick={theme.cycle} type="button">
+        <button
+          className="nav-item"
+          onClick={theme.cycle}
+          type="button"
+          title="Cycle light, dark, and system theme"
+        >
           <ThemeIcon size={16} />
-          {theme.label}
+          Theme: {theme.label}
         </button>
 
         {activeServerId && onDisconnect ? (
-          <button className="nav-item is-destructive" onClick={onDisconnect} type="button">
+          <button
+            className="nav-item is-destructive"
+            onClick={() => {
+              onDisconnect()
+              onNavigate?.()
+            }}
+            type="button"
+          >
             <LogOut size={16} />
             Disconnect
           </button>
@@ -232,7 +277,7 @@ export function AppSidebar({
       <ConfirmModal
         open={!!deleteTarget}
         title="Delete Server"
-        message={`Remove '${deleteTarget?.name}'?`}
+        message={`Remove '${deleteTarget?.name}' from this browser? You can add it again later.`}
         confirmLabel="Delete"
         danger
         onClose={() => setDeleteTarget(null)}

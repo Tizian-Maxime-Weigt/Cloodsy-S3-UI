@@ -35,27 +35,23 @@ function applyLocation(
     setOpenBucketName: (v: string | null) => void
     setBucketTab: (v: BucketTab) => void
     setShowAdmins: (v: boolean) => void
-    setMobileView: (v: 'servers' | 'dashboard' | 'bucket' | 'admins') => void
   },
 ) {
   if (!loc || loc.screen === 'welcome' || loc.screen === 'dashboard') {
     setters.setOpenBucketName(null)
     setters.setBucketTab('overview')
     setters.setShowAdmins(false)
-    setters.setMobileView('dashboard')
     return
   }
   if (loc.screen === 'admins') {
     setters.setOpenBucketName(null)
     setters.setBucketTab('overview')
     setters.setShowAdmins(true)
-    setters.setMobileView('admins')
     return
   }
   setters.setOpenBucketName(loc.bucket)
   setters.setBucketTab(loc.tab)
   setters.setShowAdmins(false)
-  setters.setMobileView('bucket')
 }
 
 export function Shell() {
@@ -72,9 +68,20 @@ export function Shell() {
   const [bucketTab, setBucketTab] = useState<BucketTab>('overview')
   const [showAdmins, setShowAdmins] = useState(false)
   const [addOpen, setAddOpen] = useState(false)
-  const [mobileView, setMobileView] = useState<'servers' | 'dashboard' | 'bucket' | 'admins'>(
-    'servers',
-  )
+  const [drawerOpen, setDrawerOpen] = useState(false)
+
+  useEffect(() => {
+    if (isWide) setDrawerOpen(false)
+  }, [isWide])
+
+  useEffect(() => {
+    if (!drawerOpen) return
+    const prev = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.body.style.overflow = prev
+    }
+  }, [drawerOpen])
 
   const syncHash = useCallback(
     (serverId: string | null | undefined, state: {
@@ -135,7 +142,6 @@ export function Shell() {
         setOpenBucketName,
         setBucketTab,
         setShowAdmins,
-        setMobileView,
       }
       if (restore) {
         applyLocation(restore, setters)
@@ -148,7 +154,6 @@ export function Shell() {
     [auth, buckets, connectingId, toast],
   )
 
-  // Restore from URL hash (or last active server) after reload
   const restoredRef = useRef(false)
   useEffect(() => {
     if (restoredRef.current || connected || connectingId) return
@@ -173,7 +178,6 @@ export function Shell() {
     })
   }, [connectToServer, connected, connectingId, servers, serversStore])
 
-  // Keep hash in sync with current view
   useEffect(() => {
     if (!connected) return
     syncHash(activeServer?.id, {
@@ -197,15 +201,25 @@ export function Shell() {
     setOpenBucketName(null)
     setBucketTab('overview')
     setShowAdmins(false)
-    setMobileView('servers')
     writeLocationHash({ screen: 'welcome' })
   }, [auth])
+
+  const selectServer = (server: ServerConnection) => {
+    setDrawerOpen(false)
+    if (connected && activeServer?.id === server.id) {
+      setOpenBucketName(null)
+      setShowAdmins(false)
+      setBucketTab('overview')
+      return
+    }
+    void connectToServer(server, { resetView: true })
+  }
 
   const openBucket = (name: string) => {
     setOpenBucketName(name)
     setBucketTab('overview')
     setShowAdmins(false)
-    if (!isWide) setMobileView('bucket')
+    setDrawerOpen(false)
   }
 
   const closeBucket = () => {
@@ -213,7 +227,6 @@ export function Shell() {
     setBucketTab('overview')
     setShowAdmins(false)
     void buckets.fetchBuckets()
-    if (!isWide) setMobileView('dashboard')
   }
 
   const onBucketTabChange = (t: BucketTab) => {
@@ -221,161 +234,70 @@ export function Shell() {
     setShowAdmins(false)
   }
 
-  // Desktop layout
-  if (isWide) {
-    return (
-      <div className="app-shell">
-        <TopBar serverName={activeServer?.name} />
-        <div className="app-shell__body">
-          <AppSidebar
-            activeServerId={connected ? activeServer?.id ?? null : null}
-            onServerTap={(s) => void connectToServer(s, { resetView: true })}
-            onDisconnect={connected ? () => void disconnect() : undefined}
-            openBucketName={openBucketName}
-            activeBucketTab={bucketTab}
-            onBucketTabChanged={onBucketTabChange}
-            onBucketClose={closeBucket}
-            showAdmins={showAdmins}
-            onAdminsTap={
-              connected
-                ? () => {
-                    setShowAdmins(true)
-                    setOpenBucketName(null)
-                  }
-                : undefined
-            }
-          />
-          {!connected ? (
-            <Welcome onAdd={() => setAddOpen(true)} connectingId={connectingId} />
-          ) : showAdmins ? (
-            <AdminScreen />
-          ) : openBucketName ? (
-            <BucketDetailScreen
-              bucketName={openBucketName}
-              tab={bucketTab}
-              onTabChange={onBucketTabChange}
-              onBack={closeBucket}
-              embedded
-            />
-          ) : (
-            <DashboardScreen onOpenBucket={openBucket} />
-          )}
-        </div>
-        <AddServerDialog open={addOpen} onClose={() => setAddOpen(false)} />
-      </div>
-    )
-  }
-
-  // Mobile layout
-  if (mobileView === 'bucket' && openBucketName) {
-    return (
-      <div className="app-shell">
-        <BucketDetailScreen
-          bucketName={openBucketName}
-          tab={bucketTab}
-          onTabChange={onBucketTabChange}
-          onBack={closeBucket}
-          showMobileTabs
-        />
-      </div>
-    )
-  }
-
-  if (mobileView === 'admins' && connected) {
-    return (
-      <div className="app-shell">
-        <AdminScreen
-          showTopBar
-          onBack={() => {
-            setShowAdmins(false)
-            setMobileView('dashboard')
-          }}
-        />
-      </div>
-    )
-  }
-
-  if (connected && mobileView === 'dashboard') {
-    return (
-      <div className="app-shell">
-        <TopBar
-          title="Dashboard"
-          serverName={activeServer?.name}
-          right={
-            <>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  setShowAdmins(true)
-                  setMobileView('admins')
-                }}
-              >
-                Admins
-              </Button>
-              <Button variant="ghost" size="sm" onClick={() => void disconnect()}>
-                Disconnect
-              </Button>
-            </>
-          }
-        />
-        <DashboardScreen onOpenBucket={openBucket} />
-      </div>
-    )
-  }
+  const pageTitle = !connected
+    ? 'Cloodsy S3'
+    : showAdmins
+      ? 'Admin Users'
+      : openBucketName ?? 'Dashboard'
 
   return (
     <div className="app-shell">
       <TopBar
-        title="Cloodsy S3"
-        right={
-          <Button size="sm" onClick={() => setAddOpen(true)}>
-            <Plus size={14} />
-            Add
-          </Button>
-        }
+        title={pageTitle}
+        serverName={connected ? activeServer?.name : undefined}
+        onMenu={!isWide ? () => setDrawerOpen((v) => !v) : undefined}
+        menuOpen={drawerOpen}
       />
-      <div className="app-content">
-        {servers.length === 0 ? (
-          <EmptyState
-            icon={Server}
-            title="No servers"
-            description="Add a Cloodsy S3 admin endpoint to get started."
-            action={
-              <Button onClick={() => setAddOpen(true)}>
-                <Plus size={14} />
-                Add Server
-              </Button>
-            }
+      <div className="app-shell__body">
+        {drawerOpen && !isWide ? (
+          <button
+            className="drawer-backdrop"
+            type="button"
+            aria-label="Close menu"
+            onClick={() => setDrawerOpen(false)}
+          />
+        ) : null}
+        <AppSidebar
+          open={isWide || drawerOpen}
+          connectingId={connectingId}
+          showBucketNav={isWide}
+          onNavigate={() => setDrawerOpen(false)}
+          activeServerId={connected ? activeServer?.id ?? null : null}
+          onServerTap={selectServer}
+          onDisconnect={connected ? () => void disconnect() : undefined}
+          openBucketName={openBucketName}
+          activeBucketTab={bucketTab}
+          onBucketTabChanged={onBucketTabChange}
+          onBucketClose={closeBucket}
+          showAdmins={showAdmins}
+          onAdminsTap={
+            connected
+              ? () => {
+                  setShowAdmins(true)
+                  setOpenBucketName(null)
+                }
+              : undefined
+          }
+        />
+        {!connected ? (
+          <Welcome
+            onAdd={() => setAddOpen(true)}
+            connectingId={connectingId}
+            onServerTap={selectServer}
+          />
+        ) : showAdmins ? (
+          <AdminScreen />
+        ) : openBucketName ? (
+          <BucketDetailScreen
+            bucketName={openBucketName}
+            tab={bucketTab}
+            onTabChange={onBucketTabChange}
+            onBack={closeBucket}
+            embedded
+            showMobileTabs={!isWide}
           />
         ) : (
-          <div className="page">
-            <h1>Servers</h1>
-            {servers.map((server) => (
-              <button
-                key={server.id}
-                className="panel list-card"
-                style={{ width: '100%', textAlign: 'left', cursor: 'pointer' }}
-                onClick={() => void connectToServer(server, { resetView: true })}
-                type="button"
-                disabled={connectingId === server.id}
-              >
-                <div className="list-card__header">
-                  <span
-                    className={`nav-item__dot ${
-                      connected && activeServer?.id === server.id ? 'is-online' : ''
-                    }`}
-                  />
-                  <strong>{server.name}</strong>
-                  <span className="spacer" />
-                  {connectingId === server.id ? <div className="spinner" /> : null}
-                </div>
-                <div style={{ fontSize: 12, color: 'var(--muted)' }}>
-                  {server.url} · {server.username}
-                </div>
-              </button>
-            ))}
-          </div>
+          <DashboardScreen onOpenBucket={openBucket} />
         )}
       </div>
       <AddServerDialog open={addOpen} onClose={() => setAddOpen(false)} />
@@ -386,19 +308,21 @@ export function Shell() {
 function Welcome({
   onAdd,
   connectingId,
+  onServerTap,
 }: {
   onAdd: () => void
   connectingId: string | null
+  onServerTap: (server: ServerConnection) => void
 }) {
   const { servers } = useServers()
   return (
     <div className="app-content">
-      <div className="page" style={{ height: '100%', justifyContent: 'center' }}>
+      <div className={`page welcome ${servers.length > 0 ? 'welcome--list' : ''}`}>
         {servers.length === 0 ? (
           <EmptyState
             icon={Server}
             title="Welcome to Cloodsy S3"
-            description="Add a server to manage buckets, credentials, lifecycle rules, and more."
+            description="Add a server to manage buckets, files, credentials, lifecycle rules, and webhooks."
             action={
               <Button onClick={onAdd}>
                 <Plus size={14} />
@@ -407,11 +331,42 @@ function Welcome({
             }
           />
         ) : (
-          <EmptyState
-            icon={Server}
-            title={connectingId ? 'Connecting…' : 'Select a server'}
-            description="Choose a server from the sidebar to connect."
-          />
+          <>
+            <div className="page-header">
+              <h1>{connectingId ? 'Connecting…' : 'Select a server'}</h1>
+              <div className="spacer" />
+              <Button size="sm" onClick={onAdd}>
+                <Plus size={14} />
+                Add Server
+              </Button>
+            </div>
+            <p className="field-hint">
+              Choose a saved admin endpoint. You can edit or remove servers from the sidebar.
+            </p>
+            <div className="server-picker">
+              {servers.map((server) => (
+                <button
+                  key={server.id}
+                  className="panel list-card server-picker__card"
+                  onClick={() => onServerTap(server)}
+                  type="button"
+                  disabled={!!connectingId}
+                >
+                  <div className="list-card__header">
+                    {connectingId === server.id ? (
+                      <span className="spinner spinner--sm" aria-hidden />
+                    ) : (
+                      <span className="nav-item__dot" />
+                    )}
+                    <strong>{server.name}</strong>
+                    <span className="spacer" />
+                    <span className="badge">{server.username}</span>
+                  </div>
+                  <div className="server-picker__meta">{server.url}</div>
+                </button>
+              ))}
+            </div>
+          </>
         )}
       </div>
     </div>

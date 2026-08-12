@@ -58,8 +58,8 @@ export function CreateCredentialDialog({
       </Field>
       <Field label="Permission">
         <Select value={permission} onChange={(e) => setPermission(e.target.value)}>
-          <option value="read-write">read-write</option>
-          <option value="read-only">read-only</option>
+          <option value="read-write">Read & write — upload, download, and delete</option>
+          <option value="read-only">Read only — download and list</option>
         </Select>
       </Field>
     </Modal>

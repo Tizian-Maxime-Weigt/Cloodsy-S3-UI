@@ -115,7 +115,7 @@ export function AdminPasswordDialog({
           Reset password for <strong>{fixedUsername}</strong>
         </p>
       )}
-      <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+      <label className="settings-row" style={{ border: 'none', padding: 0, gap: 8 }}>
         <input
           type="checkbox"
           checked={custom}

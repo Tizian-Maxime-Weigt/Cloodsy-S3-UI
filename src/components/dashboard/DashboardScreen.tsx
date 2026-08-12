@@ -1,4 +1,4 @@
-import { ExternalLink, Plus, RefreshCw, Trash2 } from 'lucide-react'
+import { Plus, RefreshCw } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { formatBytes } from '../../lib/format'
 import { useBuckets } from '../../store/buckets'
@@ -8,6 +8,7 @@ import { BucketCard } from './BucketCard'
 import { StatCard, StatIcons } from './StatCard'
 import { Button } from '../ui/Button'
 import { EmptyState } from '../ui/EmptyState'
+import { SearchField } from '../ui/Field'
 import { ConfirmModal } from '../ui/Modal'
 import { TopBar } from '../layout/TopBar'
 
@@ -38,6 +39,7 @@ export function DashboardScreen({
   const { toast } = useToast()
   const [createOpen, setCreateOpen] = useState(false)
   const [deleteName, setDeleteName] = useState<string | null>(null)
+  const [query, setQuery] = useState('')
 
   useEffect(() => {
     void fetchBuckets()
@@ -56,6 +58,12 @@ export function DashboardScreen({
     const size = buckets.reduce((s, b) => s + b.usageBytes, 0)
     return { objects, size }
   }, [buckets])
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    if (!q) return buckets
+    return buckets.filter((b) => b.name.toLowerCase().includes(q))
+  }, [buckets, query])
 
   return (
     <div className="app-content">
@@ -76,6 +84,11 @@ export function DashboardScreen({
       <div className="page">
         <div className="page-header">
           <h1>Dashboard</h1>
+          <SearchField
+            value={query}
+            onChange={setQuery}
+            placeholder="Search buckets"
+          />
           <div className="spacer" />
           <Button variant="outline" size="sm" onClick={() => void fetchBuckets()}>
             <RefreshCw size={14} />
@@ -99,8 +112,7 @@ export function DashboardScreen({
               rel="noreferrer"
               className="btn btn-outline btn-sm"
             >
-              <ExternalLink size={14} />
-              Release
+              Release notes
             </a>
           </div>
         ) : null}
@@ -111,7 +123,7 @@ export function DashboardScreen({
             value={
               serverStatus?.status === 'ok'
                 ? 'Online'
-                : (serverStatus?.status ?? '—')
+                : (serverStatus?.status ?? (isLoading ? '…' : '—'))
             }
             meta={serverStatus?.version ? `v${serverStatus.version}` : undefined}
             icon={StatIcons.Activity}
@@ -123,7 +135,7 @@ export function DashboardScreen({
           />
           <StatCard
             label="Objects"
-            value={String(totals.objects)}
+            value={totals.objects.toLocaleString()}
             icon={StatIcons.Box}
           />
           <StatCard
@@ -134,8 +146,10 @@ export function DashboardScreen({
         </div>
 
         {isLoading && buckets.length === 0 ? (
-          <div className="empty-state">
-            <div className="spinner" />
+          <div className="buckets-grid">
+            <div className="panel skeleton skeleton--card" />
+            <div className="panel skeleton skeleton--card" />
+            <div className="panel skeleton skeleton--card" />
           </div>
         ) : buckets.length === 0 ? (
           <EmptyState
@@ -148,24 +162,25 @@ export function DashboardScreen({
               </Button>
             }
           />
+        ) : filtered.length === 0 ? (
+          <EmptyState
+            title="No matching buckets"
+            description={`Nothing matches “${query.trim()}”.`}
+            action={
+              <Button variant="outline" onClick={() => setQuery('')}>
+                Clear search
+              </Button>
+            }
+          />
         ) : (
           <div className="buckets-grid">
-            {buckets.map((b) => (
-              <div key={b.id} style={{ position: 'relative' }}>
-                <BucketCard bucket={b} onOpen={onOpenBucket} />
-                <button
-                  className="btn-icon is-danger"
-                  style={{ position: 'absolute', top: 8, right: 8 }}
-                  title="Delete bucket"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    setDeleteName(b.name)
-                  }}
-                  type="button"
-                >
-                  <Trash2 size={14} />
-                </button>
-              </div>
+            {filtered.map((b) => (
+              <BucketCard
+                key={b.id}
+                bucket={b}
+                onOpen={onOpenBucket}
+                onDelete={setDeleteName}
+              />
             ))}
           </div>
         )}
@@ -183,7 +198,7 @@ export function DashboardScreen({
       <ConfirmModal
         open={!!deleteName}
         title="Delete Bucket"
-        message={`Permanently delete '${deleteName}'? This cannot be undone.`}
+        message={`Permanently delete '${deleteName}' and all of its objects? This cannot be undone.`}
         confirmLabel="Delete"
         danger
         onClose={() => setDeleteName(null)}
