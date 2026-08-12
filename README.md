@@ -114,6 +114,3 @@ add_header Permissions-Policy "camera=(), microphone=(), geolocation=(), payment
 | `src/store/auth.tsx` | Connect / login / logout / 401 recovery |
 | `src/store/buckets.tsx` | Buckets, objects, credentials, lifecycle, webhooks, admins, status |
 
-## License
-
-[Cloodsy S3 Web UI Community License 1.0](./LICENSE) — personal, internal, educational, and self-hosted use. Commercial redistribution requires permission (see `LICENSE`).
