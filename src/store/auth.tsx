@@ -11,6 +11,10 @@ import { ApiClient, ApiException } from '../api/client'
 import type { ServerConnection } from '../types'
 import { useServers } from './ServerStore'
 
+export type ConnectResult =
+  | { ok: true }
+  | { ok: false; error: string; needsPassword?: boolean }
+
 interface AuthStoreValue {
   api: ApiClient
   token: string | null
@@ -18,12 +22,20 @@ interface AuthStoreValue {
   isLoggedIn: boolean
   isLoading: boolean
   error: string | null
-  connectToServer: (server: ServerConnection) => Promise<boolean>
+  connectToServer: (
+    server: ServerConnection,
+    opts?: { password?: string; rememberPassword?: boolean },
+  ) => Promise<ConnectResult>
   disconnect: () => Promise<void>
   clearError: () => void
 }
 
 const AuthStoreContext = createContext<AuthStoreValue | null>(null)
+
+function failMessage(e: unknown): string {
+  if (e instanceof ApiException) return e.message
+  return `Connection failed: ${e}`
+}
 
 export function AuthStoreProvider({ children }: { children: ReactNode }) {
   const servers = useServers()
@@ -35,6 +47,7 @@ export function AuthStoreProvider({ children }: { children: ReactNode }) {
   const [serverId, setServerId] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const probingRef = useRef(false)
 
   const forceDisconnect = useCallback(() => {
     setTokenState(null)
@@ -44,7 +57,7 @@ export function AuthStoreProvider({ children }: { children: ReactNode }) {
   }, [api, servers])
 
   const doLogin = useCallback(
-    async (user: string, password: string, sid: string | null) => {
+    async (user: string, password: string, sid: string | null): Promise<ConnectResult> => {
       try {
         const response = await api.post('/login', {
           username: user,
@@ -56,17 +69,18 @@ export function AuthStoreProvider({ children }: { children: ReactNode }) {
         setUsername(newUser)
         api.token = newToken
         if (sid) servers.saveToken(sid, newToken)
-        return true
+        return { ok: true }
       } catch (e) {
-        if (e instanceof ApiException) setError(e.message)
-        else setError(`Connection failed: ${e}`)
-        return false
+        const message = failMessage(e)
+        setError(message)
+        return { ok: false, error: message }
       }
     },
     [api, servers],
   )
 
   const handleUnauthorized = useCallback(() => {
+    if (probingRef.current) return
     if (serverId && username) {
       const pw = servers.getPassword(serverId)
       if (pw) {
@@ -80,39 +94,51 @@ export function AuthStoreProvider({ children }: { children: ReactNode }) {
   api.onUnauthorized = handleUnauthorized
 
   const connectToServer = useCallback(
-    async (server: ServerConnection) => {
+    async (
+      server: ServerConnection,
+      opts?: { password?: string; rememberPassword?: boolean },
+    ): Promise<ConnectResult> => {
       setIsLoading(true)
       setError(null)
       setServerId(server.id)
       api.baseUrl = server.url
 
+      if (opts?.password) {
+        servers.setPassword(server.id, opts.password, opts.rememberPassword ?? false)
+      }
+
       const savedToken = servers.getToken(server.id)
-      if (savedToken) {
+      if (savedToken && !opts?.password) {
         setTokenState(savedToken)
         api.token = savedToken
+        probingRef.current = true
         try {
           await api.get('/status')
           setUsername(server.username)
           setIsLoading(false)
           servers.setActiveServer(server)
-          return true
+          return { ok: true }
         } catch {
           setTokenState(null)
           api.token = null
+          servers.clearToken(server.id)
+        } finally {
+          probingRef.current = false
         }
       }
 
-      const password = servers.getPassword(server.id)
+      const password = opts?.password || servers.getPassword(server.id)
       if (password) {
-        const success = await doLogin(server.username, password, server.id)
+        const result = await doLogin(server.username, password, server.id)
         setIsLoading(false)
-        if (success) servers.setActiveServer(server)
-        return success
+        if (result.ok) servers.setActiveServer(server)
+        return result
       }
 
-      setError('No saved credentials')
+      const message = 'Enter the admin password to connect'
+      setError(message)
       setIsLoading(false)
-      return false
+      return { ok: false, error: message, needsPassword: true }
     },
     [api, doLogin, servers],
   )

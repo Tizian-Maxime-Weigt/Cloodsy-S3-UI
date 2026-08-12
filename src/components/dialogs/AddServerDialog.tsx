@@ -7,6 +7,7 @@ import { useToast } from '../../store/toast'
 import { Button } from '../ui/Button'
 import { Field, Input } from '../ui/Field'
 import { Modal } from '../ui/Modal'
+import { Switch } from '../ui/Switch'
 
 export function AddServerDialog({
   open,
@@ -17,13 +18,16 @@ export function AddServerDialog({
   onClose: () => void
   existing?: ServerConnection | null
 }) {
-  const { addServer, updateServer } = useServers()
+  const { addServer, updateServer, hasPersistedPassword } = useServers()
   const { toast } = useToast()
   const [name, setName] = useState(existing?.name ?? '')
   const [url, setUrl] = useState(existing?.url ?? '')
   const [s3Url, setS3Url] = useState(existing?.s3Url ?? '')
   const [username, setUsername] = useState(existing?.username ?? '')
   const [password, setPassword] = useState('')
+  const [rememberPassword, setRememberPassword] = useState(
+    existing ? hasPersistedPassword(existing.id) : false,
+  )
 
   // Reset when opening / switching edit target
   const key = `${existing?.id ?? 'new'}-${open}`
@@ -35,6 +39,7 @@ export function AddServerDialog({
     setS3Url(existing?.s3Url ?? '')
     setUsername(existing?.username ?? '')
     setPassword('')
+    setRememberPassword(existing ? hasPersistedPassword(existing.id) : false)
   }
 
   const canSave =
@@ -71,7 +76,10 @@ export function AddServerDialog({
           s3Url: normalizedS3,
           username: username.trim(),
         },
-        password || null,
+        {
+          password: password || null,
+          persistPassword: rememberPassword,
+        },
       )
     } else {
       addServer(
@@ -82,6 +90,7 @@ export function AddServerDialog({
           username: username.trim(),
         },
         password,
+        rememberPassword,
       )
     }
     onClose()
@@ -147,7 +156,11 @@ export function AddServerDialog({
       </Field>
       <Field
         label="Password"
-        hint={existing ? 'Leave blank to keep the current password' : undefined}
+        hint={
+          existing
+            ? 'Leave blank to keep the current password (if remembered)'
+            : 'Used to sign in. Not stored unless you turn on Remember password.'
+        }
       >
         <Input
           type="password"
@@ -157,6 +170,15 @@ export function AddServerDialog({
           autoComplete="current-password"
         />
       </Field>
+      <div className="settings-row" style={{ padding: '8px 0 0' }}>
+        <div className="settings-row__text">
+          <div className="settings-row__title">Remember password</div>
+          <div className="settings-row__desc">
+            Saves the password in this browser. Off = session token only.
+          </div>
+        </div>
+        <Switch checked={rememberPassword} onChange={setRememberPassword} />
+      </div>
     </Modal>
   )
 }
