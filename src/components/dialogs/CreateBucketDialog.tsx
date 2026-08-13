@@ -1,3 +1,4 @@
+import { ChevronDown, ChevronRight } from 'lucide-react'
 import { useState } from 'react'
 import { Button } from '../ui/Button'
 import { Field, Input } from '../ui/Field'
@@ -14,6 +15,7 @@ export function CreateBucketDialog({
 }) {
   const [name, setName] = useState('')
   const [storageDir, setStorageDir] = useState('')
+  const [advanced, setAdvanced] = useState(false)
   const [busy, setBusy] = useState(false)
 
   const key = String(open)
@@ -22,6 +24,7 @@ export function CreateBucketDialog({
     setPrev(key)
     setName('')
     setStorageDir('')
+    setAdvanced(false)
     setBusy(false)
   }
 
@@ -57,13 +60,24 @@ export function CreateBucketDialog({
           autoFocus
         />
       </Field>
-      <Field label="Storage directory (optional)" hint="Absolute path, or leave empty for default">
-        <Input
-          value={storageDir}
-          onChange={(e) => setStorageDir(e.target.value)}
-          placeholder="/var/data/buckets/my-bucket"
-        />
-      </Field>
+      <button
+        type="button"
+        className="advanced-toggle"
+        aria-expanded={advanced}
+        onClick={() => setAdvanced((v) => !v)}
+      >
+        {advanced ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+        Advanced
+      </button>
+      {advanced ? (
+        <Field label="Storage directory" hint="Optional absolute path. Leave empty for the default.">
+          <Input
+            value={storageDir}
+            onChange={(e) => setStorageDir(e.target.value)}
+            placeholder="/var/data/buckets/my-bucket"
+          />
+        </Field>
+      ) : null}
     </Modal>
   )
 }

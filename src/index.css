@@ -415,6 +415,24 @@ a.btn {
   color: var(--muted);
 }
 
+.advanced-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  align-self: flex-start;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.advanced-toggle:hover {
+  color: var(--text);
+}
+
 /* Cards / panels */
 .panel {
   background: var(--surface);
