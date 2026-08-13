@@ -599,7 +599,7 @@ a.btn {
   font-weight: 500;
 }
 
-.bucket-table__storage {
+.table td.bucket-table__storage {
   min-width: 200px;
   white-space: normal;
 }
@@ -938,6 +938,11 @@ a.btn {
   font-size: 12px;
   color: var(--muted);
   margin-top: 2px;
+}
+
+.settings-row__meter {
+  margin-top: 8px;
+  max-width: 360px;
 }
 
 /* Table */
