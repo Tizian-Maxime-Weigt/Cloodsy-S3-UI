@@ -512,6 +512,74 @@ a.btn {
   color: var(--muted);
 }
 
+.buckets-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.buckets-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.buckets-search {
+  position: relative;
+  flex: 1;
+  min-width: min(100%, 220px);
+  max-width: 360px;
+}
+
+.buckets-search svg {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--muted);
+  pointer-events: none;
+}
+
+.buckets-search .input {
+  padding-left: 32px;
+}
+
+.view-switch {
+  display: inline-flex;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  flex-shrink: 0;
+}
+
+.view-switch button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  padding: 6px 10px;
+  border-radius: 4px;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.view-switch button:hover {
+  color: var(--text);
+}
+
+.view-switch button.is-active {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.bucket-table__name {
+  font-weight: 500;
+}
+
 .badge {
   display: inline-flex;
   align-items: center;
