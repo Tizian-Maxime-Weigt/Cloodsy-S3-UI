@@ -15,6 +15,7 @@ const CSP = [
   // Admin/S3 endpoints are user-configured (any host).
   "connect-src 'self' https: http: ws: wss:",
   "worker-src 'self' blob:",
+  "frame-src 'self' blob:",
 ].join('; ')
 
 export function securityHeadersPlugin(): Plugin {

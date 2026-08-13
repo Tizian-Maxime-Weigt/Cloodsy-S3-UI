@@ -4,6 +4,7 @@ import {
   Copy,
   Download,
   ExternalLink,
+  Eye,
   File,
   FileAudio,
   FileImage,
@@ -11,6 +12,7 @@ import {
   FileVideo,
   Folder,
   FolderPlus,
+  Link2,
   MoreHorizontal,
   Pencil,
   TextCursorInput,
@@ -19,10 +21,16 @@ import {
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
+  VIEW_MAX_BYTES,
+  blobForView,
+  canPreviewInBrowser,
   createS3Session,
   deriveS3Endpoint,
-  isImageKey,
+  fetchObjectBlob,
+  guessContentType,
+  isRasterImageKey,
   isTextEditable,
+  needsSandboxedPreview,
   pickBucketCredential,
   publicObjectUrl,
   publicViewUrl,
@@ -32,6 +40,7 @@ import {
   s3Upload,
   S3OpsError,
   triggerBrowserDownload,
+  type PresignMethod,
   type S3Session,
   type UploadProgress,
 } from '../../api/s3'
@@ -47,6 +56,8 @@ import { useServers } from '../../store/ServerStore'
 import { useToast } from '../../store/toast'
 import { debugError } from '../../lib/debug'
 import type { S3Object } from '../../types'
+import { PresignDialog } from '../dialogs/PresignDialog'
+import { PreviewDialog } from '../dialogs/PreviewDialog'
 import { PromptModal, TextEditModal } from '../dialogs/FileDialogs'
 import { Button } from '../ui/Button'
 import { Dropdown } from '../ui/Dropdown'
@@ -59,34 +70,14 @@ function iconFor(key: string) {
   if (['mp4', 'mov', 'webm', 'mkv'].includes(ext)) return FileVideo
   if (['mp3', 'wav', 'flac', 'aac', 'ogg'].includes(ext)) return FileAudio
   if (['zip', 'tar', 'gz', 'rar', '7z'].includes(ext)) return Archive
-  if (['js', 'ts', 'tsx', 'jsx', 'py', 'go', 'rs', 'java', 'json', 'yml', 'yaml'].includes(ext))
+  if (
+    ['js', 'ts', 'tsx', 'jsx', 'py', 'go', 'rs', 'java', 'json', 'yml', 'yaml', 'html', 'htm'].includes(
+      ext,
+    )
+  )
     return Code2
   if (['txt', 'md', 'csv', 'log', 'pdf'].includes(ext)) return FileText
   return File
-}
-
-function guessContentType(name: string): string | undefined {
-  const ext = fileExtension(name)
-  const map: Record<string, string> = {
-    html: 'text/html',
-    htm: 'text/html',
-    css: 'text/css',
-    js: 'application/javascript',
-    json: 'application/json',
-    png: 'image/png',
-    jpg: 'image/jpeg',
-    jpeg: 'image/jpeg',
-    gif: 'image/gif',
-    webp: 'image/webp',
-    svg: 'image/svg+xml',
-    pdf: 'application/pdf',
-    txt: 'text/plain',
-    md: 'text/markdown',
-    csv: 'text/csv',
-    xml: 'application/xml',
-    zip: 'application/zip',
-  }
-  return map[ext]
 }
 
 export function FilesTab({ bucketName }: { bucketName: string }) {
@@ -131,6 +122,14 @@ export function FilesTab({ bucketName }: { bucketName: string }) {
   const [editTarget, setEditTarget] = useState<{ key: string; text: string } | null>(
     null,
   )
+  const [presign, setPresign] = useState<{ key: string; method: PresignMethod } | null>(
+    null,
+  )
+  const [preview, setPreview] = useState<{
+    key: string
+    blob: Blob
+    contentType?: string
+  } | null>(null)
 
   const publicRead =
     selectedBucket?.name === bucketName ? selectedBucket.publicRead : false
@@ -200,7 +199,7 @@ export function FilesTab({ bucketName }: { bucketName: string }) {
 
   const copyPublicUrl = async (key: string) => {
     // For images copy the view URL so pasted links display instead of downloading
-    const url = isImageKey(key) ? objectViewUrl(key) : objectPublicUrl(key)
+    const url = isRasterImageKey(key) ? objectViewUrl(key) : objectPublicUrl(key)
     if (!url) {
       toast('Set an S3 URL on the server first', 'error')
       return
@@ -220,7 +219,7 @@ export function FilesTab({ bucketName }: { bucketName: string }) {
   }
 
   const openPublicUrl = (key: string, contentType?: string) => {
-    const url = isImageKey(key, contentType)
+    const url = isRasterImageKey(key, contentType)
       ? objectViewUrl(key)
       : objectPublicUrl(key)
     if (!url) {
@@ -231,14 +230,53 @@ export function FilesTab({ bucketName }: { bucketName: string }) {
     closeMenu()
   }
 
-  const openInTab = (key: string) => {
-    const url = isImageKey(key) ? objectViewUrl(key) : objectPublicUrl(key)
-    if (!url) {
-      toast('Set an S3 URL on the server first', 'error')
+  const viewObject = async (obj: S3Object) => {
+    if (obj.size > VIEW_MAX_BYTES) {
+      toast('File is too large to preview — download it instead', 'error')
+      closeMenu()
       return
     }
-    window.open(url, '_blank', 'noopener,noreferrer')
-    closeMenu()
+    if (publicRead && isRasterImageKey(obj.key, obj.contentType) && objectViewUrl(obj.key)) {
+      window.open(objectViewUrl(obj.key), '_blank', 'noopener,noreferrer')
+      closeMenu()
+      return
+    }
+
+    setBusy(true)
+    try {
+      const result =
+        s3Client && s3Ready
+          ? await s3DownloadBlob(s3Client, bucketName, obj.key)
+          : publicRead && objectPublicUrl(obj.key)
+            ? await fetchObjectBlob(objectPublicUrl(obj.key))
+            : null
+      if (!result) {
+        toast(s3Error || 'S3 access unavailable', 'error')
+        return
+      }
+      const typed = blobForView(result.blob, obj.key, result.contentType || obj.contentType)
+      if (needsSandboxedPreview(obj.key, typed.type)) {
+        setPreview({ key: obj.key, blob: typed, contentType: typed.type })
+      } else {
+        const url = URL.createObjectURL(typed)
+        window.open(url, '_blank', 'noopener,noreferrer')
+        window.setTimeout(() => URL.revokeObjectURL(url), 120_000)
+      }
+    } catch (e) {
+      debugError('FilesTab preview error', e)
+      toast(e instanceof S3OpsError ? e.message : 'Preview failed', 'error')
+    } finally {
+      setBusy(false)
+      closeMenu()
+    }
+  }
+
+  const openFile = (obj: S3Object) => {
+    if (canPreviewInBrowser(obj.key, obj.contentType)) {
+      void viewObject(obj)
+      return
+    }
+    openPublicUrl(obj.key, obj.contentType)
   }
 
   const crumbs = useMemo(() => {
@@ -551,6 +589,21 @@ export function FilesTab({ bucketName }: { bucketName: string }) {
             New folder
           </Button>
           <Button
+            variant="outline"
+            size="sm"
+            disabled={busy || !s3Ready}
+            onClick={() =>
+              setPresign({
+                key: `${prefix}index.html`,
+                method: canWrite ? 'PUT' : 'GET',
+              })
+            }
+            title={!s3Ready ? s3Error ?? undefined : 'Create a time-limited upload or download URL'}
+          >
+            <Link2 size={14} />
+            Signed URL
+          </Button>
+          <Button
             size="sm"
             disabled={busy || !canWrite || !s3Ready}
             onClick={() => fileInputRef.current?.click()}
@@ -676,7 +729,8 @@ export function FilesTab({ bucketName }: { bucketName: string }) {
               })}
               {objectList!.objects.map((obj) => {
                 const Icon = iconFor(obj.key)
-                const image = isImageKey(obj.key, obj.contentType)
+                const previewable = canPreviewInBrowser(obj.key, obj.contentType)
+                const image = isRasterImageKey(obj.key, obj.contentType)
                 const href = image ? objectViewUrl(obj.key) : objectPublicUrl(obj.key)
                 return (
                   <tr key={obj.key}>
@@ -696,7 +750,7 @@ export function FilesTab({ bucketName }: { bucketName: string }) {
                         title={href || undefined}
                         onClick={(e) => {
                           e.preventDefault()
-                          openPublicUrl(obj.key, obj.contentType)
+                          openFile(obj)
                         }}
                       >
                         <Icon size={16} />
@@ -708,6 +762,17 @@ export function FilesTab({ bucketName }: { bucketName: string }) {
                     <td>{formatDate(obj.lastModified)}</td>
                     <td>
                       <div className="row-actions">
+                        {previewable ? (
+                          <button
+                            className="btn-icon"
+                            type="button"
+                            title="View"
+                            disabled={busy}
+                            onClick={() => void viewObject(obj)}
+                          >
+                            <Eye size={14} />
+                          </button>
+                        ) : null}
                         <button
                           className="btn-icon"
                           type="button"
@@ -812,16 +877,51 @@ export function FilesTab({ bucketName }: { bucketName: string }) {
         onSave={saveEditor}
       />
 
+      <PresignDialog
+        open={!!presign}
+        session={s3Client}
+        bucket={bucketName}
+        objectKey={presign?.key ?? ''}
+        defaultMethod={presign?.method ?? 'GET'}
+        canWrite={canWrite}
+        onClose={() => setPresign(null)}
+      />
+
+      <PreviewDialog
+        open={!!preview}
+        objectKey={preview?.key ?? ''}
+        blob={preview?.blob ?? null}
+        contentType={preview?.contentType}
+        onClose={() => setPreview(null)}
+      />
+
       <Dropdown open={!!menuObj} onClose={closeMenu} anchor={menuAnchor}>
         {menuObj ? (
           <>
-            <button type="button" onClick={() => openInTab(menuObj.key)}>
-              <ExternalLink size={14} />
-              Open in tab
+            <button type="button" onClick={() => openFile(menuObj)}>
+              {canPreviewInBrowser(menuObj.key, menuObj.contentType) ? (
+                <Eye size={14} />
+              ) : (
+                <ExternalLink size={14} />
+              )}
+              {canPreviewInBrowser(menuObj.key, menuObj.contentType)
+                ? 'View in browser'
+                : 'Open in tab'}
             </button>
             <button type="button" onClick={() => void copyPublicUrl(menuObj.key)}>
               <Copy size={14} />
               Copy public URL
+            </button>
+            <button
+              type="button"
+              disabled={!s3Ready}
+              onClick={() => {
+                setPresign({ key: menuObj.key, method: 'GET' })
+                closeMenu()
+              }}
+            >
+              <Link2 size={14} />
+              Presigned URL
             </button>
             {isTextEditable(menuObj.key, menuObj.contentType, menuObj.size) && canWrite ? (
               <button type="button" onClick={() => void openEditor(menuObj)}>

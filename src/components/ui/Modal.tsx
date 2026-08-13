@@ -9,9 +9,10 @@ interface ModalProps {
   children: ReactNode
   footer?: ReactNode
   wide?: boolean
+  preview?: boolean
 }
 
-export function Modal({ title, open, onClose, children, footer, wide }: ModalProps) {
+export function Modal({ title, open, onClose, children, footer, wide, preview }: ModalProps) {
   useEffect(() => {
     if (!open) return
     const onKey = (e: KeyboardEvent) => {
@@ -26,7 +27,7 @@ export function Modal({ title, open, onClose, children, footer, wide }: ModalPro
   return (
     <div className="modal-backdrop" onClick={onClose} role="presentation">
       <div
-        className={`modal ${wide ? 'modal--wide' : ''}`}
+        className={`modal ${preview ? 'modal--preview' : wide ? 'modal--wide' : ''}`}
         role="dialog"
         aria-modal="true"
         onClick={(e) => e.stopPropagation()}
@@ -38,7 +39,7 @@ export function Modal({ title, open, onClose, children, footer, wide }: ModalPro
             <X size={16} />
           </button>
         </div>
-        <div className="modal__body">{children}</div>
+        <div className={`modal__body ${preview ? 'modal__body--preview' : ''}`}>{children}</div>
         {footer ? <div className="modal__footer">{footer}</div> : null}
       </div>
     </div>

@@ -104,6 +104,123 @@ export function publicBucketUrl(endpoint: string, bucket: string): string {
   return `${endpoint.replace(/\/$/, '')}/${encodeURIComponent(bucket)}`
 }
 
+function keyExt(key: string): string {
+  const base = key.includes('/') ? key.slice(key.lastIndexOf('/') + 1) : key
+  return base.includes('.') ? base.slice(base.lastIndexOf('.') + 1).toLowerCase() : ''
+}
+
+export function guessContentType(name: string): string | undefined {
+  const ext = keyExt(name)
+  const map: Record<string, string> = {
+    html: 'text/html',
+    htm: 'text/html',
+    xhtml: 'application/xhtml+xml',
+    css: 'text/css',
+    js: 'application/javascript',
+    mjs: 'application/javascript',
+    json: 'application/json',
+    png: 'image/png',
+    jpg: 'image/jpeg',
+    jpeg: 'image/jpeg',
+    gif: 'image/gif',
+    webp: 'image/webp',
+    svg: 'image/svg+xml',
+    avif: 'image/avif',
+    bmp: 'image/bmp',
+    ico: 'image/x-icon',
+    pdf: 'application/pdf',
+    txt: 'text/plain',
+    md: 'text/markdown',
+    csv: 'text/csv',
+    xml: 'application/xml',
+    zip: 'application/zip',
+    mp4: 'video/mp4',
+    webm: 'video/webm',
+    mov: 'video/quicktime',
+    mp3: 'audio/mpeg',
+    wav: 'audio/wav',
+    ogg: 'audio/ogg',
+    flac: 'audio/flac',
+  }
+  return map[ext]
+}
+
+export function isImageKey(key: string, contentType?: string): boolean {
+  if (contentType?.startsWith('image/')) return true
+  return ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'avif', 'bmp', 'ico'].includes(
+    keyExt(key),
+  )
+}
+
+/** Raster images Cloodsy can transform; SVG is not in that path. */
+export function isRasterImageKey(key: string, contentType?: string): boolean {
+  if (contentType) {
+    if (!contentType.startsWith('image/')) return false
+    if (contentType.includes('svg')) return false
+  }
+  return ['png', 'jpg', 'jpeg', 'gif', 'webp', 'avif', 'bmp', 'ico'].includes(keyExt(key))
+}
+
+export function isHtmlKey(key: string, contentType?: string): boolean {
+  if (
+    contentType?.startsWith('text/html') ||
+    contentType === 'application/xhtml+xml'
+  ) {
+    return true
+  }
+  return ['html', 'htm', 'xhtml'].includes(keyExt(key))
+}
+
+export function isSvgKey(key: string, contentType?: string): boolean {
+  if (contentType === 'image/svg+xml') return true
+  return keyExt(key) === 'svg'
+}
+
+export function isPdfKey(key: string, contentType?: string): boolean {
+  if (contentType === 'application/pdf') return true
+  return keyExt(key) === 'pdf'
+}
+
+export function isVideoKey(key: string, contentType?: string): boolean {
+  if (contentType?.startsWith('video/')) return true
+  return ['mp4', 'mov', 'webm', 'mkv'].includes(keyExt(key))
+}
+
+export function isAudioKey(key: string, contentType?: string): boolean {
+  if (contentType?.startsWith('audio/')) return true
+  return ['mp3', 'wav', 'flac', 'aac', 'ogg'].includes(keyExt(key))
+}
+
+/** HTML/SVG must not be opened as same-origin blob tabs (stored XSS). */
+export function needsSandboxedPreview(key: string, contentType?: string): boolean {
+  return isHtmlKey(key, contentType) || isSvgKey(key, contentType)
+}
+
+export function canPreviewInBrowser(key: string, contentType?: string): boolean {
+  return (
+    needsSandboxedPreview(key, contentType) ||
+    isRasterImageKey(key, contentType) ||
+    isPdfKey(key, contentType) ||
+    isVideoKey(key, contentType) ||
+    isAudioKey(key, contentType)
+  )
+}
+
+export function resolveViewContentType(key: string, contentType?: string): string {
+  if (isHtmlKey(key, contentType)) return 'text/html;charset=utf-8'
+  if (isSvgKey(key, contentType)) return 'image/svg+xml'
+  if (contentType && contentType !== 'application/octet-stream') return contentType
+  return guessContentType(key) || contentType || 'application/octet-stream'
+}
+
+export function blobForView(blob: Blob, key: string, contentType?: string): Blob {
+  const type = resolveViewContentType(key, contentType || blob.type)
+  if (blob.type === type) return blob
+  return new Blob([blob], { type })
+}
+
+export const VIEW_MAX_BYTES = 32 * 1024 * 1024
+
 /**
  * Cloodsy serves normal GETs as Content-Disposition: attachment (browser downloads).
  * Image transform responses are inline — append a wide fit so the browser displays them.
@@ -114,15 +231,62 @@ export function publicViewUrl(
   key: string,
 ): string {
   const base = publicObjectUrl(endpoint, bucket, key)
-  if (!isImageKey(key)) return base
+  if (!isRasterImageKey(key)) return base
   const sep = base.includes('?') ? '&' : '?'
   return `${base}${sep}w=4096&m=f`
 }
 
-export function isImageKey(key: string, contentType?: string): boolean {
-  if (contentType?.startsWith('image/')) return true
-  const ext = key.includes('.') ? key.slice(key.lastIndexOf('.') + 1).toLowerCase() : ''
-  return ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'avif', 'bmp', 'ico'].includes(ext)
+export const PRESIGN_MAX_SECONDS = 7 * 24 * 60 * 60
+export const PRESIGN_DEFAULT_GET_SECONDS = 3600
+export const PRESIGN_DEFAULT_PUT_SECONDS = 900
+
+export const PRESIGN_EXPIRY_OPTIONS = [
+  { label: '15 minutes', seconds: 900 },
+  { label: '1 hour', seconds: 3600 },
+  { label: '6 hours', seconds: 21_600 },
+  { label: '1 day', seconds: 86_400 },
+  { label: '7 days', seconds: PRESIGN_MAX_SECONDS },
+] as const
+
+export type PresignMethod = 'GET' | 'PUT'
+
+export interface PresignOptions {
+  method?: PresignMethod
+  /** Validity in seconds. Clamped to 1s–7 days (SigV4 signing-key lifetime). */
+  expiresIn?: number
+  /** Locked into PUT signatures; the uploader must send the same Content-Type. */
+  contentType?: string
+}
+
+export async function s3PresignUrl(
+  session: S3Session,
+  bucket: string,
+  key: string,
+  options: PresignOptions = {},
+): Promise<string> {
+  const method: PresignMethod = options.method === 'PUT' ? 'PUT' : 'GET'
+  const expiresIn = Math.min(
+    PRESIGN_MAX_SECONDS,
+    Math.max(1, Math.floor(options.expiresIn ?? (method === 'PUT' ? PRESIGN_DEFAULT_PUT_SECONDS : PRESIGN_DEFAULT_GET_SECONDS))),
+  )
+  const url = new URL(objectUrl(session.endpoint, bucket, key))
+  url.searchParams.set('X-Amz-Expires', String(expiresIn))
+
+  const contentType = method === 'PUT' ? options.contentType?.trim() : undefined
+  const signed = await session.client.sign(url.toString(), {
+    method,
+    headers: contentType ? { 'Content-Type': contentType } : undefined,
+    aws: {
+      signQuery: true,
+      allHeaders: Boolean(contentType),
+    },
+  })
+  return signed.url
+}
+
+export function presignPutExample(url: string, contentType?: string): string {
+  const type = contentType || 'application/octet-stream'
+  return `curl -X PUT -H "Content-Type: ${type}" --data-binary @file "${url}"`
 }
 
 export const MULTIPART_THRESHOLD = 16 * 1024 * 1024
@@ -369,6 +533,31 @@ export async function s3DownloadBlob(
 ): Promise<{ blob: Blob; contentType?: string }> {
   const url = objectUrl(session.endpoint, bucket, key)
   const res = await s3Fetch(session, 'Download', url, { method: 'GET' }, { bucket, key })
+  const contentType = res.headers.get('content-type') || undefined
+  const buf = await res.arrayBuffer()
+  return {
+    blob: new Blob([buf], { type: contentType || 'application/octet-stream' }),
+    contentType,
+  }
+}
+
+/** Anonymous GET of a public or presigned object URL (needs S3 CORS). */
+export async function fetchObjectBlob(
+  url: string,
+): Promise<{ blob: Blob; contentType?: string }> {
+  debugInfo('S3 FetchUrl →', { url })
+  let res: Response
+  try {
+    res = await fetch(url, { method: 'GET', credentials: 'omit' })
+  } catch (e) {
+    debugError('S3 FetchUrl network/client error', { url, error: errMessage(e), raw: e })
+    throw new S3OpsError(`Download failed: ${errMessage(e)}`)
+  }
+  if (!res.ok) {
+    const { summary, body } = await readS3Error(res)
+    debugError('S3 FetchUrl failed', { url, status: res.status, summary, body: body.slice(0, 1000) })
+    throw new S3OpsError(`Download failed: ${summary}`)
+  }
   const contentType = res.headers.get('content-type') || undefined
   const buf = await res.arrayBuffer()
   return {
