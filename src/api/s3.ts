@@ -236,7 +236,8 @@ export function publicViewUrl(
   return `${base}${sep}w=4096&m=f`
 }
 
-export const PRESIGN_MAX_SECONDS = 7 * 24 * 60 * 60
+export const PRESIGN_MAX_SECONDS = 365 * 24 * 60 * 60
+
 export const PRESIGN_DEFAULT_GET_SECONDS = 3600
 export const PRESIGN_DEFAULT_PUT_SECONDS = 900
 
@@ -245,7 +246,10 @@ export const PRESIGN_EXPIRY_OPTIONS = [
   { label: '1 hour', seconds: 3600 },
   { label: '6 hours', seconds: 21_600 },
   { label: '1 day', seconds: 86_400 },
-  { label: '7 days', seconds: PRESIGN_MAX_SECONDS },
+  { label: '7 days', seconds: 7 * 24 * 60 * 60 },
+  { label: '30 days', seconds: 30 * 24 * 60 * 60 },
+  { label: '90 days', seconds: 90 * 24 * 60 * 60 },
+  { label: '365 days', seconds: PRESIGN_MAX_SECONDS },
 ] as const
 
 export type PresignMethod = 'GET' | 'PUT'

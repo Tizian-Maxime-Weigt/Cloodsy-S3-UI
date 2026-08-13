@@ -172,7 +172,10 @@ export function PresignDialog({
             </option>
           </Select>
         </Field>
-        <Field label="Expires">
+        <Field
+          label="Expires"
+          hint="Cloodsy currently rejects signatures longer than 7 days unless that server limit is raised."
+        >
           <Select
             value={String(expiresIn)}
             onChange={(e) => setExpiresIn(Number(e.target.value))}
