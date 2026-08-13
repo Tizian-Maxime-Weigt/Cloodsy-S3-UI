@@ -29,6 +29,8 @@
   --hover: var(--zinc-100);
   --active: var(--zinc-100);
   --sidebar-w: 230px;
+  --page-pad-x: 40px;
+  --page-pad-y: 28px;
   --radius: 6px;
   --radius-lg: 8px;
   --radius-xl: 10px;
@@ -130,7 +132,7 @@ p {
   align-items: center;
   gap: 12px;
   height: 48px;
-  padding: 0 16px;
+  padding: 0 var(--page-pad-x);
   background: var(--surface);
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
@@ -421,7 +423,7 @@ a.btn {
 }
 
 .page {
-  padding: 24px;
+  padding: var(--page-pad-y) var(--page-pad-x);
   display: flex;
   flex-direction: column;
   gap: 20px;
@@ -1162,7 +1164,7 @@ a.btn {
   display: flex;
   gap: 4px;
   overflow-x: auto;
-  padding: 8px 16px;
+  padding: 8px var(--page-pad-x);
   border-bottom: 1px solid var(--border);
   background: var(--surface);
 }
@@ -1358,6 +1360,11 @@ a.btn {
 }
 
 @media (max-width: 899px) {
+  :root {
+    --page-pad-x: 20px;
+    --page-pad-y: 20px;
+  }
+
   .sidebar {
     display: none;
   }
@@ -1385,10 +1392,6 @@ a.btn {
 
   .overview__stat-value {
     font-size: 20px;
-  }
-
-  .page {
-    padding: 16px;
   }
 }
 
@@ -1485,7 +1488,7 @@ a.btn {
   align-items: center;
   gap: 12px;
   height: 48px;
-  padding: 0 16px;
+  padding: 0 var(--page-pad-x);
   background: var(--surface);
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
