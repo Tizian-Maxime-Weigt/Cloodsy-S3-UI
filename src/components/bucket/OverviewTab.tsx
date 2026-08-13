@@ -6,6 +6,7 @@ import { useServers } from '../../store/ServerStore'
 import { useToast } from '../../store/toast'
 import type { Bucket } from '../../types'
 import { Button } from '../ui/Button'
+import { StorageMeter } from '../ui/StorageMeter'
 
 function StatusPill({
   label,
@@ -31,9 +32,6 @@ export function OverviewTab({ bucket }: { bucket: Bucket }) {
   const { api } = useAuth()
   const { toast } = useToast()
   const hasQuota = bucket.quotaBytes > 0
-  const pct = hasQuota
-    ? Math.min(100, (bucket.usageBytes / bucket.quotaBytes) * 100)
-    : 0
   const storagePath = bucket.storagePath || bucket.storageDir || null
   const versioningLabel = bucket.versioning
     ? bucket.versioning.charAt(0).toUpperCase() + bucket.versioning.slice(1)
@@ -82,22 +80,9 @@ export function OverviewTab({ bucket }: { bucket: Bucket }) {
           </div>
         </div>
 
-        {hasQuota ? (
-          <div className="overview__quota">
-            <div className="overview__quota-meta">
-              <span>
-                {formatBytes(bucket.usageBytes)} of{' '}
-                {formatBytes(bucket.quotaBytes)} used
-              </span>
-              <span>{pct < 1 && bucket.usageBytes > 0 ? '<1' : Math.round(pct)}%</span>
-            </div>
-            <div className="progress progress--lg">
-              <div className="progress__bar" style={{ width: `${pct}%` }} />
-            </div>
-          </div>
-        ) : (
-          <p className="overview__hint">No storage quota set for this bucket.</p>
-        )}
+        <div className="overview__quota">
+          <StorageMeter used={bucket.usageBytes} quota={bucket.quotaBytes} />
+        </div>
       </section>
 
       <section className="overview__flags">

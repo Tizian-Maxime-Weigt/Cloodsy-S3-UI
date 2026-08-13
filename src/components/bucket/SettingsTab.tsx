@@ -1,13 +1,13 @@
 import { Copy, RefreshCw, Trash2 } from 'lucide-react'
 import { useState } from 'react'
 import type { Bucket } from '../../types'
-import { formatBytes } from '../../lib/format'
 import { useBuckets } from '../../store/buckets'
 import { useToast } from '../../store/toast'
 import { SetQuotaDialog } from '../dialogs/SetQuotaDialog'
 import { SetStorageDialog } from '../dialogs/SetStorageDialog'
 import { Button } from '../ui/Button'
 import { ConfirmModal } from '../ui/Modal'
+import { StorageMeter } from '../ui/StorageMeter'
 import { Switch } from '../ui/Switch'
 
 export function SettingsTab({
@@ -48,10 +48,13 @@ export function SettingsTab({
         <div className="settings-row">
           <div className="settings-row__text">
             <div className="settings-row__title">Quota</div>
-            <div className="settings-row__desc">
-              {bucket.quotaBytes > 0
-                ? `${formatBytes(bucket.usageBytes)} / ${formatBytes(bucket.quotaBytes)}`
-                : 'Unlimited'}
+            <div className="settings-row__meter">
+              <StorageMeter
+                used={bucket.usageBytes}
+                quota={bucket.quotaBytes}
+                size="sm"
+                label={false}
+              />
             </div>
           </div>
           <Button variant="outline" size="sm" onClick={() => setQuotaOpen(true)}>

@@ -10,6 +10,7 @@ import { Button } from '../ui/Button'
 import { EmptyState } from '../ui/EmptyState'
 import { ConfirmModal } from '../ui/Modal'
 import { TopBar } from '../layout/TopBar'
+import { StorageMeter } from '../ui/StorageMeter'
 import type { Bucket } from '../../types'
 
 const VIEW_KEY = 'cloodsy_buckets_view'
@@ -229,8 +230,7 @@ export function DashboardScreen({
                     <tr>
                       <th>Name</th>
                       <th>Objects</th>
-                      <th>Size</th>
-                      <th>Quota</th>
+                      <th>Storage</th>
                       <th>Access</th>
                       <th>Versioning</th>
                       <th>Keys</th>
@@ -249,11 +249,13 @@ export function DashboardScreen({
                           <span className="bucket-table__name">{b.name}</span>
                         </td>
                         <td>{b.objects.toLocaleString()}</td>
-                        <td>{formatBytes(b.usageBytes)}</td>
-                        <td>
-                          {b.quotaBytes > 0
-                            ? `${formatBytes(b.usageBytes)} / ${formatBytes(b.quotaBytes)}`
-                            : 'Unlimited'}
+                        <td className="bucket-table__storage">
+                          <StorageMeter
+                            used={b.usageBytes}
+                            quota={b.quotaBytes}
+                            size="sm"
+                            label={false}
+                          />
                         </td>
                         <td>{b.publicRead ? 'Public' : 'Private'}</td>
                         <td>{b.versioning || '—'}</td>

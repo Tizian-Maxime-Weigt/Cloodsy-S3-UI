@@ -599,6 +599,15 @@ a.btn {
   font-weight: 500;
 }
 
+.bucket-table__storage {
+  min-width: 200px;
+  white-space: normal;
+}
+
+.bucket-table__storage .ui-progress {
+  min-width: 160px;
+}
+
 .badge {
   display: inline-flex;
   align-items: center;
@@ -632,6 +641,66 @@ a.btn {
   height: 100%;
   background: var(--primary);
   border-radius: 999px;
+}
+
+/* shadcn/ui Base Progress */
+.ui-progress {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  width: 100%;
+  min-width: 140px;
+}
+
+.ui-progress__label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.ui-progress__value {
+  margin-left: auto;
+  font-size: 13px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.ui-progress:not(:has(.ui-progress__label)) .ui-progress__value {
+  margin-left: 0;
+}
+
+.ui-progress__track {
+  flex-basis: 100%;
+  position: relative;
+  height: 4px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--hover);
+}
+
+.ui-progress--sm .ui-progress__label,
+.ui-progress--sm .ui-progress__value {
+  font-size: 12px;
+}
+
+.ui-progress--sm .ui-progress__track {
+  height: 4px;
+}
+
+.ui-progress__indicator {
+  height: 100%;
+  width: 100%;
+  border-radius: 999px;
+  background: var(--primary);
+  transform: translateX(calc(-100% + var(--progress, 0%)));
+  transition: transform 0.2s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-progress__indicator {
+    transition: none;
+  }
 }
 
 .banner {
