@@ -222,6 +222,7 @@ export function SettingsTab({
         message={`Permanently delete '${bucket.name}'? This cannot be undone.`}
         confirmLabel="Delete"
         danger
+        requireTypedValue={bucket.name}
         onClose={() => setDeleteOpen(false)}
         onConfirm={async () => {
           const ok = await deleteBucket(bucket.name)

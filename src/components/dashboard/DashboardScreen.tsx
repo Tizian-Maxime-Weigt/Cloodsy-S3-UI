@@ -331,6 +331,7 @@ export function DashboardScreen({
         message={`Permanently delete '${deleteName}'? This cannot be undone.`}
         confirmLabel="Delete"
         danger
+        requireTypedValue={deleteName ?? undefined}
         onClose={() => setDeleteName(null)}
         onConfirm={async () => {
           if (!deleteName) return

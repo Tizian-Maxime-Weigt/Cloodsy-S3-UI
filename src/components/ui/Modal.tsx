@@ -1,6 +1,7 @@
-import { useEffect, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { X } from 'lucide-react'
 import { Button } from './Button'
+import { Field, Input } from './Field'
 
 interface ModalProps {
   title: string
@@ -52,6 +53,7 @@ export function ConfirmModal({
   message,
   confirmLabel = 'Confirm',
   danger,
+  requireTypedValue,
   onConfirm,
   onClose,
 }: {
@@ -60,9 +62,24 @@ export function ConfirmModal({
   message: string
   confirmLabel?: string
   danger?: boolean
+  requireTypedValue?: string
   onConfirm: () => void
   onClose: () => void
 }) {
+  const [typed, setTyped] = useState('')
+  const resetKey = open ? (requireTypedValue ?? '') : ''
+  const [prevKey, setPrevKey] = useState(resetKey)
+  if (resetKey !== prevKey) {
+    setPrevKey(resetKey)
+    setTyped('')
+  }
+
+  const matches = !requireTypedValue || typed.trim() === requireTypedValue
+  const confirm = () => {
+    if (!matches) return
+    onConfirm()
+  }
+
   return (
     <Modal
       open={open}
@@ -73,13 +90,29 @@ export function ConfirmModal({
           <Button variant="outline" onClick={onClose}>
             Cancel
           </Button>
-          <Button variant={danger ? 'danger' : 'primary'} onClick={onConfirm}>
+          <Button variant={danger ? 'danger' : 'primary'} onClick={confirm} disabled={!matches}>
             {confirmLabel}
           </Button>
         </>
       }
     >
       <p style={{ color: 'var(--text-secondary)' }}>{message}</p>
+      {requireTypedValue ? (
+        <Field label={`Type ${requireTypedValue} to confirm`}>
+          <Input
+            value={typed}
+            onChange={(e) => setTyped(e.target.value)}
+            placeholder={requireTypedValue}
+            autoComplete="off"
+            autoCorrect="off"
+            spellCheck={false}
+            autoFocus
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') confirm()
+            }}
+          />
+        </Field>
+      ) : null}
     </Modal>
   )
 }
