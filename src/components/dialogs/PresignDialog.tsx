@@ -150,8 +150,7 @@ export function PresignDialog({
     >
       <p className="presign-lead">
         Time-limited link with a SigV4 signature. Anyone who has it can{' '}
-        {method === 'PUT' ? 'upload to this key' : 'read this object'} until it expires — no
-        access key is shared.
+        {method === 'PUT' ? 'upload to this key' : 'read this object'} until it expires.
       </p>
 
       <div className="presign-grid">
