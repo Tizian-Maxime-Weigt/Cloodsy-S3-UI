@@ -132,7 +132,7 @@ export function AddServerDialog({
       </Field>
       <Field
         label="S3 URL"
-        hint="S3 API for upload / download / edit. e.g. s3.example.com or https://s3.example.com"
+        hint="S3 API for upload / download / edit."
       >
         <Input
           value={s3Url}
