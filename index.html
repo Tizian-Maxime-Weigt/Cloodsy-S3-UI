@@ -2,6 +2,23 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <script src="/theme-boot.js"></script>
+    <style>
+      html,
+      body {
+        background-color: #fafafa;
+      }
+      html[data-theme='dark'],
+      html[data-theme='dark'] body {
+        background-color: #09090b;
+      }
+      @media (prefers-color-scheme: dark) {
+        html:not([data-theme='light']),
+        html:not([data-theme='light']) body {
+          background-color: #09090b;
+        }
+      }
+    </style>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="referrer" content="no-referrer" />

@@ -3,6 +3,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useState,
   type ReactNode,
@@ -25,6 +26,11 @@ function systemPrefersDark(): boolean {
   return window.matchMedia('(prefers-color-scheme: dark)').matches
 }
 
+function applyResolvedTheme(resolved: 'light' | 'dark') {
+  document.documentElement.dataset.theme = resolved
+  document.documentElement.style.colorScheme = resolved
+}
+
 export function ThemeStoreProvider({ children }: { children: ReactNode }) {
   const [mode, setModeState] = useState<ThemeMode>(() => {
     const saved = localStorage.getItem(KEY) as ThemeMode | null
@@ -44,8 +50,8 @@ export function ThemeStoreProvider({ children }: { children: ReactNode }) {
   const resolved: 'light' | 'dark' =
     mode === 'system' ? (systemDark ? 'dark' : 'light') : mode
 
-  useEffect(() => {
-    document.documentElement.dataset.theme = resolved
+  useLayoutEffect(() => {
+    applyResolvedTheme(resolved)
   }, [resolved])
 
   const setMode = useCallback((m: ThemeMode) => {
