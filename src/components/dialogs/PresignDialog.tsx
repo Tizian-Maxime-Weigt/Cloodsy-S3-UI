@@ -172,6 +172,7 @@ export function PresignDialog({
             </option>
           </Select>
         </Field>
+        <Field label="Expiry">
           <Select
             value={String(expiresIn)}
             onChange={(e) => setExpiresIn(Number(e.target.value))}
@@ -182,6 +183,7 @@ export function PresignDialog({
               </option>
             ))}
           </Select>
+        </Field>
       </div>
 
       <Field
