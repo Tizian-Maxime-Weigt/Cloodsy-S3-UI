@@ -182,7 +182,6 @@ export function PresignDialog({
               </option>
             ))}
           </Select>
-        </Field>
       </div>
 
       <Field
