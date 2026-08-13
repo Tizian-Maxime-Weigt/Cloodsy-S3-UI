@@ -234,10 +234,6 @@ export function PresignDialog({
       </Field>
 
       {viewHref ? (
-        <Field
-          label="View in browser"
-          hint="Cloodsy serves GET as a download. This UI link fetches the object and renders HTML, images, and PDFs instead."
-        >
           <div className="presign-url">
             <code>{viewHref}</code>
             <Button
@@ -249,7 +245,6 @@ export function PresignDialog({
               Open
             </Button>
           </div>
-        </Field>
       ) : method === 'GET' ? (
         <p className="field-hint">
           Opening the raw S3 URL downloads the file. Use View in the file list to render HTML in
