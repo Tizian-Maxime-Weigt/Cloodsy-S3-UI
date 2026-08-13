@@ -107,7 +107,7 @@ export function DashboardScreen({
 
         <div className="stats-grid">
           <StatCard
-            label="Status"
+            label="Backend Status"
             value={
               serverStatus?.status === 'ok'
                 ? 'Online'
