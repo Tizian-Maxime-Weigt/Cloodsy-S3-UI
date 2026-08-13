@@ -608,6 +608,22 @@ a.btn {
   min-width: 160px;
 }
 
+.access-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.access-pill svg {
+  flex-shrink: 0;
+}
+
+.access-pill--public {
+  color: var(--text-secondary);
+}
+
 .badge {
   display: inline-flex;
   align-items: center;

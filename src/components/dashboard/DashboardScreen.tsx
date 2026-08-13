@@ -1,4 +1,4 @@
-import { ExternalLink, LayoutGrid, Plus, RefreshCw, Search, Table2, Trash2 } from 'lucide-react'
+import { ExternalLink, Globe, LayoutGrid, Lock, Plus, RefreshCw, Search, Table2, Trash2 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { formatBytes, formatDate } from '../../lib/format'
 import { useBuckets } from '../../store/buckets'
@@ -257,7 +257,19 @@ export function DashboardScreen({
                             label={false}
                           />
                         </td>
-                        <td>{b.publicRead ? 'Public' : 'Private'}</td>
+                        <td>
+                          <span
+                            className={`access-pill ${b.publicRead ? 'access-pill--public' : ''}`}
+                            title={
+                              b.publicRead
+                                ? 'Public read — anonymous GET/HEAD'
+                                : 'Private — signed access only'
+                            }
+                          >
+                            {b.publicRead ? <Globe size={14} /> : <Lock size={14} />}
+                            <span>{b.publicRead ? 'Public' : 'Private'}</span>
+                          </span>
+                        </td>
                         <td>{b.versioning || '—'}</td>
                         <td>{b.credentials}</td>
                         <td>{formatDate(b.createdAt)}</td>
