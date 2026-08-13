@@ -117,11 +117,6 @@ export function OverviewTab({ bucket }: { bucket: Bucket }) {
             <Link2 size={16} />
             <div>
               <div className="overview__stat-label">Public path</div>
-              <div style={{ fontSize: 13, color: 'var(--muted)' }}>
-                {bucket.publicRead
-                  ? 'Anonymous GET/HEAD works for objects under this URL'
-                  : 'Enable Public read in Settings for anonymous access'}
-              </div>
             </div>
           </div>
           <div className="overview__public-row">

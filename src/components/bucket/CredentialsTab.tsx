@@ -23,8 +23,12 @@ export function CredentialsTab({ bucketName }: { bucketName: string }) {
   }, [bucketName, fetchCredentials])
 
   const copy = async (text: string, label: string) => {
-    await navigator.clipboard.writeText(text)
-    toast(`${label} copied`, 'success')
+    try {
+      await navigator.clipboard.writeText(text)
+      toast(`${label} copied`, 'success')
+    } catch {
+      toast(text, 'info')
+    }
   }
 
   return (
@@ -59,34 +63,49 @@ export function CredentialsTab({ bucketName }: { bucketName: string }) {
               </button>
             </div>
             <div className="secret-row">
-              <span style={{ fontSize: 12, color: 'var(--muted)', width: 72 }}>Access</span>
-              <code className="mono">{c.accessKey}</code>
-              <button className="btn-icon" type="button" onClick={() => void copy(c.accessKey, 'Access key')}>
-                <Copy size={14} />
-              </button>
+              <span className="secret-row__label">Access</span>
+              <code className="mono" title={c.accessKey}>
+                {c.accessKey}
+              </code>
+              <div className="secret-row__actions">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  type="button"
+                  onClick={() => void copy(c.accessKey, 'Access key')}
+                >
+                  <Copy size={14} />
+                  Copy
+                </Button>
+              </div>
             </div>
             {c.secretKey ? (
               <div className="secret-row">
-                <span style={{ fontSize: 12, color: 'var(--muted)', width: 72 }}>Secret</span>
-                <code className="mono">
+                <span className="secret-row__label">Secret</span>
+                <code className="mono" title={visible[c.accessKey] ? c.secretKey : undefined}>
                   {visible[c.accessKey] ? c.secretKey : '••••••••••••••••'}
                 </code>
-                <button
-                  className="btn-icon"
-                  type="button"
-                  onClick={() =>
-                    setVisible((v) => ({ ...v, [c.accessKey]: !v[c.accessKey] }))
-                  }
-                >
-                  {visible[c.accessKey] ? <EyeOff size={14} /> : <Eye size={14} />}
-                </button>
-                <button
-                  className="btn-icon"
-                  type="button"
-                  onClick={() => void copy(c.secretKey!, 'Secret key')}
-                >
-                  <Copy size={14} />
-                </button>
+                <div className="secret-row__actions">
+                  <button
+                    className="btn-icon"
+                    type="button"
+                    title={visible[c.accessKey] ? 'Hide secret' : 'Show secret'}
+                    onClick={() =>
+                      setVisible((v) => ({ ...v, [c.accessKey]: !v[c.accessKey] }))
+                    }
+                  >
+                    {visible[c.accessKey] ? <EyeOff size={14} /> : <Eye size={14} />}
+                  </button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    type="button"
+                    onClick={() => void copy(c.secretKey!, 'Secret key')}
+                  >
+                    <Copy size={14} />
+                    Copy
+                  </Button>
+                </div>
               </div>
             ) : null}
           </div>
