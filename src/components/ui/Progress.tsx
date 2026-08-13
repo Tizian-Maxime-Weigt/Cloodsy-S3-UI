@@ -17,12 +17,14 @@ export function Progress({
   children,
   className = '',
   size = 'md',
+  layout = 'stack',
 }: {
   value: number
   max?: number
   children?: ReactNode
   className?: string
   size?: 'sm' | 'md'
+  layout?: 'stack' | 'inline'
 }) {
   const safeMax = max > 0 ? max : 100
   const pct = Math.min(100, Math.max(0, (value / safeMax) * 100))
@@ -30,7 +32,7 @@ export function Progress({
   return (
     <ProgressContext.Provider value={{ value, max: safeMax, pct }}>
       <div
-        className={`ui-progress ${size === 'sm' ? 'ui-progress--sm' : ''} ${className}`.trim()}
+        className={`ui-progress ${size === 'sm' ? 'ui-progress--sm' : ''} ${layout === 'inline' ? 'ui-progress--inline' : ''} ${className}`.trim()}
         data-slot="progress"
       >
         {children}

@@ -46,16 +46,15 @@ export function SettingsTab({
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
       <div className="panel" style={{ padding: '4px 16px' }}>
         <div className="settings-row">
-          <div className="settings-row__text">
-            <div className="settings-row__title">Quota</div>
-            <div className="settings-row__meter">
-              <StorageMeter
-                used={bucket.usageBytes}
-                quota={bucket.quotaBytes}
-                size="sm"
-                label={false}
-              />
-            </div>
+          <div className="settings-row__title">Quota</div>
+          <div className="settings-row__quota">
+            <StorageMeter
+              used={bucket.usageBytes}
+              quota={bucket.quotaBytes}
+              size="sm"
+              layout="inline"
+              label={false}
+            />
           </div>
           <Button variant="outline" size="sm" onClick={() => setQuotaOpen(true)}>
             Configure

@@ -704,6 +704,53 @@ a.btn {
   height: 4px;
 }
 
+.ui-progress--inline {
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.ui-progress--inline .ui-progress__label {
+  order: 0;
+  flex-shrink: 0;
+  font-size: 14px;
+}
+
+.ui-progress--inline .ui-progress__track {
+  order: 1;
+  flex: 0 0 140px;
+  width: 140px;
+  max-width: 140px;
+  height: 6px;
+}
+
+.ui-progress--inline .ui-progress__value {
+  order: 2;
+  margin-left: 0;
+  flex-shrink: 0;
+}
+
+.settings-row__quota {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  padding: 0 28px;
+}
+
+.settings-row__quota .ui-progress {
+  width: 100%;
+  min-width: 0;
+}
+
+.settings-row__quota .ui-progress__track {
+  flex: 1 1 auto;
+  width: auto;
+  max-width: none;
+}
+
 .ui-progress__indicator {
   height: 100%;
   width: 100%;
@@ -954,11 +1001,6 @@ a.btn {
   font-size: 12px;
   color: var(--muted);
   margin-top: 2px;
-}
-
-.settings-row__meter {
-  margin-top: 8px;
-  max-width: 360px;
 }
 
 /* Table */
