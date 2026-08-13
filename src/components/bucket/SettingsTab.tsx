@@ -190,6 +190,8 @@ export function SettingsTab({
       <SetQuotaDialog
         open={quotaOpen}
         onClose={() => setQuotaOpen(false)}
+        current={bucket.quotaBytes}
+        used={bucket.usageBytes}
         onSave={async (bytes) => {
           const ok = await setQuota(bucket.name, bytes)
           if (ok) toast('Quota updated', 'success')

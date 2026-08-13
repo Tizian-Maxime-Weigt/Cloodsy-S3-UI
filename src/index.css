@@ -1620,6 +1620,146 @@ a.btn {
   }
 }
 
+.quota-lead {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.quota-now {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--hover);
+}
+
+.quota-now div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.quota-now dt {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.quota-now dd {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.quota-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.quota-preset {
+  min-height: 32px;
+  padding: 6px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.quota-preset:hover:not(:disabled) {
+  color: var(--text);
+  background: var(--hover);
+}
+
+.quota-preset.is-on {
+  background: var(--primary);
+  color: var(--primary-fg);
+  border-color: var(--primary);
+}
+
+.quota-input {
+  display: flex;
+  align-items: stretch;
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.quota-input:focus-within {
+  border-color: var(--text);
+}
+
+.quota-input.is-off {
+  opacity: 0.5;
+}
+
+.quota-input__amount {
+  flex: 1;
+  min-width: 0;
+  width: auto;
+  padding: 9px 12px;
+  border: none;
+  background: transparent;
+  outline: none;
+  font-variant-numeric: tabular-nums;
+}
+
+.quota-input__amount::-webkit-outer-spin-button,
+.quota-input__amount::-webkit-inner-spin-button {
+  appearance: none;
+  margin: 0;
+}
+
+.quota-input__amount[type='number'] {
+  appearance: textfield;
+}
+
+.quota-input__units {
+  display: flex;
+  border-left: 1px solid var(--border);
+  background: var(--hover);
+}
+
+.quota-input__unit {
+  min-width: 38px;
+  padding: 0 8px;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.quota-input__unit:hover:not(:disabled) {
+  color: var(--text);
+}
+
+.quota-input__unit.is-on {
+  background: var(--surface);
+  color: var(--text);
+}
+
+.quota-preview {
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.quota-warn {
+  margin: 0;
+  font-size: 12px;
+  color: var(--error);
+}
+
 .presign-lead {
   margin: 0;
   color: var(--text-secondary);
