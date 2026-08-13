@@ -1,4 +1,4 @@
-import { Copy, RefreshCw } from 'lucide-react'
+import { Copy, RefreshCw, Trash2 } from 'lucide-react'
 import { useState } from 'react'
 import type { Bucket } from '../../types'
 import { formatBytes } from '../../lib/format'
@@ -7,9 +7,16 @@ import { useToast } from '../../store/toast'
 import { SetQuotaDialog } from '../dialogs/SetQuotaDialog'
 import { SetStorageDialog } from '../dialogs/SetStorageDialog'
 import { Button } from '../ui/Button'
+import { ConfirmModal } from '../ui/Modal'
 import { Switch } from '../ui/Switch'
 
-export function SettingsTab({ bucket }: { bucket: Bucket }) {
+export function SettingsTab({
+  bucket,
+  onDeleted,
+}: {
+  bucket: Bucket
+  onDeleted?: () => void
+}) {
   const {
     setQuota,
     setStorage,
@@ -18,11 +25,13 @@ export function SettingsTab({ bucket }: { bucket: Bucket }) {
     setWebdavEnabled,
     reprocessImages,
     webdavMountUrl,
+    deleteBucket,
   } = useBuckets()
   const { toast } = useToast()
   const [quotaOpen, setQuotaOpen] = useState(false)
   const [storageOpen, setStorageOpen] = useState(false)
   const [reprocessing, setReprocessing] = useState(false)
+  const [deleteOpen, setDeleteOpen] = useState(false)
 
   const isVersioningEnabled = /enabled/i.test(bucket.versioning)
 
@@ -137,6 +146,21 @@ export function SettingsTab({ bucket }: { bucket: Bucket }) {
         </div>
       </div>
 
+      <div className="panel" style={{ padding: '4px 16px' }}>
+        <div className="settings-row">
+          <div className="settings-row__text">
+            <div className="settings-row__title">Delete bucket</div>
+            <div className="settings-row__desc">
+              Permanently remove this bucket and all of its objects. This cannot be undone.
+            </div>
+          </div>
+          <Button variant="danger" size="sm" onClick={() => setDeleteOpen(true)}>
+            <Trash2 size={14} />
+            Delete
+          </Button>
+        </div>
+      </div>
+
       {bucket.webdavEnabled && webdavMountUrl ? (
         <div className="panel list-card">
           <div className="list-card__header">
@@ -188,6 +212,22 @@ export function SettingsTab({ bucket }: { bucket: Bucket }) {
           const ok = await setStorage(bucket.name, '')
           if (ok) toast('Storage reset', 'success')
           return ok
+        }}
+      />
+      <ConfirmModal
+        open={deleteOpen}
+        title="Delete Bucket"
+        message={`Permanently delete '${bucket.name}'? This cannot be undone.`}
+        confirmLabel="Delete"
+        danger
+        onClose={() => setDeleteOpen(false)}
+        onConfirm={async () => {
+          const ok = await deleteBucket(bucket.name)
+          setDeleteOpen(false)
+          if (ok) {
+            toast('Bucket deleted', 'success')
+            onDeleted?.()
+          }
         }}
       />
     </div>

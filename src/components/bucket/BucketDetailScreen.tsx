@@ -110,7 +110,9 @@ export function BucketDetailScreen({
             {tab === 'overview' ? <OverviewTab bucket={bucket} /> : null}
             {tab === 'files' ? <FilesTab bucketName={bucketName} /> : null}
             {tab === 'credentials' ? <CredentialsTab bucketName={bucketName} /> : null}
-            {tab === 'settings' ? <SettingsTab bucket={bucket} /> : null}
+            {tab === 'settings' ? (
+              <SettingsTab bucket={bucket} onDeleted={onBack} />
+            ) : null}
             {tab === 'lifecycle' ? <LifecycleTab bucketName={bucketName} /> : null}
             {tab === 'webhooks' ? <WebhooksTab bucketName={bucketName} /> : null}
           </>

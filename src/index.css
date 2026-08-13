@@ -565,6 +565,7 @@ a.btn {
 
 .view-switch {
   display: inline-flex;
+  margin-left: auto;
   padding: 2px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
