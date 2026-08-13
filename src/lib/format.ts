@@ -6,6 +6,24 @@ export function formatBytes(bytes: number): string {
   return `${value < 10 && i > 0 ? value.toFixed(1) : Math.round(value)} ${units[i]}`
 }
 
+export function formatBitrate(bytesPerSecond: number): string {
+  if (!Number.isFinite(bytesPerSecond) || bytesPerSecond <= 0) return ''
+  const bits = bytesPerSecond * 8
+  if (bits >= 1_000_000_000) {
+    const g = bits / 1_000_000_000
+    return `${g < 10 ? g.toFixed(1) : Math.round(g)} Gbit/s`
+  }
+  if (bits >= 1_000_000) {
+    const m = bits / 1_000_000
+    return `${m < 10 ? m.toFixed(1) : Math.round(m)} Mbit/s`
+  }
+  if (bits >= 1_000) {
+    const k = bits / 1_000
+    return `${k < 10 ? k.toFixed(1) : Math.round(k)} kbit/s`
+  }
+  return `${Math.round(bits)} bit/s`
+}
+
 export function formatDate(iso: string): string {
   if (!iso) return '—'
   const d = new Date(iso)

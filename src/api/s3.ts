@@ -301,6 +301,7 @@ export interface UploadProgress {
   bytesTotal: number
   part?: number
   parts?: number
+  bytesPerSecond?: number
 }
 
 function bodyByteLength(body: Blob | string | Uint8Array): number {
@@ -335,6 +336,120 @@ async function readS3Error(res: Response): Promise<{ summary: string; body: stri
   return { summary, body: text }
 }
 
+const XHR_SKIP_HEADERS = new Set([
+  'content-length',
+  'host',
+  'connection',
+  'keep-alive',
+  'transfer-encoding',
+  'origin',
+  'referer',
+])
+
+function parseXhrHeaders(raw: string): Headers {
+  const headers = new Headers()
+  for (const line of raw.trim().split(/[\r\n]+/)) {
+    const i = line.indexOf(':')
+    if (i > 0) headers.append(line.slice(0, i).trim(), line.slice(i + 1).trim())
+  }
+  return headers
+}
+
+function createSpeedTracker() {
+  let prevBytes = 0
+  let prevAt = 0
+  let ema = 0
+  return (bytes: number) => {
+    const now = performance.now()
+    if (!prevAt) {
+      prevBytes = bytes
+      prevAt = now
+      return 0
+    }
+    const dt = (now - prevAt) / 1000
+    if (dt <= 0) return ema
+    const inst = Math.max(0, (bytes - prevBytes) / dt)
+    ema = ema === 0 ? inst : ema * 0.75 + inst * 0.25
+    prevBytes = bytes
+    prevAt = now
+    return ema
+  }
+}
+
+async function assertS3Ok(
+  session: S3Session,
+  action: string,
+  url: string,
+  res: Response,
+): Promise<Response> {
+  if (res.ok) {
+    debugInfo(`S3 ${action} ✓`, { url, status: res.status })
+    return res
+  }
+  const { summary, body } = await readS3Error(res)
+  debugError(`S3 ${action} failed`, {
+    url,
+    status: res.status,
+    statusText: res.statusText,
+    summary,
+    body: body.slice(0, 1000),
+    endpoint: session.endpoint,
+    accessKeyId: `${session.accessKeyId.slice(0, 6)}…`,
+  })
+  throw new S3OpsError(`${action} failed: ${summary}`)
+}
+
+function wrapS3NetworkError(
+  session: S3Session,
+  action: string,
+  url: string,
+  e: unknown,
+): never {
+  if (e instanceof S3OpsError) throw e
+  debugError(`S3 ${action} network/client error`, {
+    url,
+    endpoint: session.endpoint,
+    error: errMessage(e),
+    raw: e,
+  })
+  throw new S3OpsError(`${action} failed: ${errMessage(e)}`)
+}
+
+function xhrPut(
+  signed: Request,
+  body: XMLHttpRequestBodyInit,
+  onProgress?: (loaded: number, total: number) => void,
+): Promise<Response> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest()
+    xhr.open(signed.method || 'PUT', signed.url)
+    signed.headers.forEach((value, key) => {
+      if (XHR_SKIP_HEADERS.has(key.toLowerCase())) return
+      xhr.setRequestHeader(key, value)
+    })
+    let lastEmit = 0
+    xhr.upload.onprogress = (e) => {
+      if (!e.lengthComputable) return
+      const now = performance.now()
+      if (e.loaded < e.total && now - lastEmit < 100) return
+      lastEmit = now
+      onProgress?.(e.loaded, e.total)
+    }
+    xhr.onload = () => {
+      resolve(
+        new Response(xhr.responseText, {
+          status: xhr.status,
+          statusText: xhr.statusText,
+          headers: parseXhrHeaders(xhr.getAllResponseHeaders()),
+        }),
+      )
+    }
+    xhr.onerror = () => reject(new TypeError('Network error'))
+    xhr.onabort = () => reject(new DOMException('Aborted', 'AbortError'))
+    xhr.send(body)
+  })
+}
+
 async function s3Fetch(
   session: S3Session,
   action: string,
@@ -345,30 +460,33 @@ async function s3Fetch(
   debugInfo(`S3 ${action} →`, { url, method: init.method, ...meta })
   try {
     const res = await session.client.fetch(url, init)
-    if (!res.ok) {
-      const { summary, body } = await readS3Error(res)
-      debugError(`S3 ${action} failed`, {
-        url,
-        status: res.status,
-        statusText: res.statusText,
-        summary,
-        body: body.slice(0, 1000),
-        endpoint: session.endpoint,
-        accessKeyId: `${session.accessKeyId.slice(0, 6)}…`,
-      })
-      throw new S3OpsError(`${action} failed: ${summary}`)
-    }
-    debugInfo(`S3 ${action} ✓`, { url, status: res.status })
-    return res
+    return await assertS3Ok(session, action, url, res)
   } catch (e) {
-    if (e instanceof S3OpsError) throw e
-    debugError(`S3 ${action} network/client error`, {
-      url,
-      endpoint: session.endpoint,
-      error: errMessage(e),
-      raw: e,
+    wrapS3NetworkError(session, action, url, e)
+  }
+}
+
+async function s3PutWithProgress(
+  session: S3Session,
+  action: string,
+  url: string,
+  body: Blob | string | Uint8Array,
+  headers: Record<string, string>,
+  meta: Record<string, unknown>,
+  onByteProgress?: (loaded: number, total: number) => void,
+): Promise<Response> {
+  const payload = toRequestBody(body)
+  debugInfo(`S3 ${action} →`, { url, method: 'PUT', ...meta })
+  try {
+    const signed = await session.client.sign(url, {
+      method: 'PUT',
+      body: payload,
+      headers,
     })
-    throw new S3OpsError(`${action} failed: ${errMessage(e)}`)
+    const res = await xhrPut(signed, payload as XMLHttpRequestBodyInit, onByteProgress)
+    return await assertS3Ok(session, action, url, res)
+  } catch (e) {
+    wrapS3NetworkError(session, action, url, e)
   }
 }
 
@@ -379,22 +497,37 @@ async function s3PutObject(
   body: Blob | string | Uint8Array,
   contentType: string | undefined,
   bytes: number,
+  onProgress?: (p: UploadProgress) => void,
 ) {
   const url = objectUrl(session.endpoint, bucket, key)
-  await s3Fetch(
-    session,
-    'Upload',
-    url,
-    {
-      method: 'PUT',
-      body: toRequestBody(body),
-      headers: {
-        'Content-Type': contentType || 'application/octet-stream',
-        'Content-Length': String(bytes),
-      },
-    },
-    { bucket, key, bytes, contentType },
-  )
+  const headers = {
+    'Content-Type': contentType || 'application/octet-stream',
+    'Content-Length': String(bytes),
+  }
+  const meta = { bucket, key, bytes, contentType }
+  if (!onProgress) {
+    await s3Fetch(
+      session,
+      'Upload',
+      url,
+      { method: 'PUT', body: toRequestBody(body), headers },
+      meta,
+    )
+    return
+  }
+  const track = createSpeedTracker()
+  await s3PutWithProgress(session, 'Upload', url, body, headers, meta, (loaded, total) => {
+    onProgress({
+      bytesSent: loaded,
+      bytesTotal: total || bytes,
+      bytesPerSecond: track(loaded),
+    })
+  })
+  onProgress({
+    bytesSent: bytes,
+    bytesTotal: bytes,
+    bytesPerSecond: track(bytes),
+  })
 }
 
 async function s3AbortMultipart(
@@ -448,6 +581,7 @@ async function s3UploadMultipart(
 ) {
   const parts = Math.ceil(blob.size / MULTIPART_PART_SIZE)
   const etags: { partNumber: number; etag: string }[] = []
+  const track = createSpeedTracker()
 
   try {
     for (let i = 0; i < parts; i++) {
@@ -456,29 +590,31 @@ async function s3UploadMultipart(
       const chunk = blob.slice(start, end)
       const partNumber = i + 1
       const partUrl = `${objectUrl(session.endpoint, bucket, key)}?partNumber=${partNumber}&uploadId=${encodeURIComponent(uploadId)}`
-      const res = await s3Fetch(
+      const emit = (loaded: number) => {
+        onProgress?.({
+          bytesSent: start + loaded,
+          bytesTotal: blob.size,
+          part: partNumber,
+          parts,
+          bytesPerSecond: track(start + loaded),
+        })
+      }
+      const res = await s3PutWithProgress(
         session,
         'UploadPart',
         partUrl,
+        chunk,
         {
-          method: 'PUT',
-          body: chunk,
-          headers: {
-            'Content-Type': contentType,
-            'Content-Length': String(chunk.size),
-          },
+          'Content-Type': contentType,
+          'Content-Length': String(chunk.size),
         },
         { bucket, key, partNumber, parts, bytes: chunk.size },
+        (loaded) => emit(loaded),
       )
       const etag = res.headers.get('etag') || res.headers.get('ETag')
       if (!etag) throw new S3OpsError(`Upload failed: missing ETag for part ${partNumber}`)
       etags.push({ partNumber, etag })
-      onProgress?.({
-        bytesSent: end,
-        bytesTotal: blob.size,
-        part: partNumber,
-        parts,
-      })
+      emit(chunk.size)
     }
 
     const completeXml = `<CompleteMultipartUpload>${etags
@@ -521,13 +657,11 @@ export async function s3Upload(
     const uploadId = await s3TryCreateMultipart(session, bucket, key, type)
     if (uploadId) {
       await s3UploadMultipart(session, bucket, key, body, type, uploadId, onProgress)
-      onProgress?.({ bytesSent: bytes, bytesTotal: bytes })
       return
     }
   }
 
-  await s3PutObject(session, bucket, key, body, type, bytes)
-  onProgress?.({ bytesSent: bytes, bytesTotal: bytes })
+  await s3PutObject(session, bucket, key, body, type, bytes, onProgress)
 }
 
 export async function s3DownloadBlob(

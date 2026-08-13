@@ -48,6 +48,7 @@ import {
   fileExtension,
   fileNameFromKey,
   formatBytes,
+  formatBitrate,
   formatDate,
 } from '../../lib/format'
 import { useAuth } from '../../store/auth'
@@ -611,6 +612,9 @@ export function FilesTab({ bucketName }: { bucketName: string }) {
             {upload.total > 1 ? ` (${upload.index}/${upload.total})` : ''}
             {' · '}
             {formatBytes(upload.progress.bytesSent)} / {formatBytes(upload.progress.bytesTotal)}
+            {upload.progress.bytesPerSecond
+              ? ` · ${formatBitrate(upload.progress.bytesPerSecond)}`
+              : ''}
             {upload.progress.parts
               ? ` · part ${upload.progress.part ?? 0}/${upload.progress.parts}`
               : ''}
