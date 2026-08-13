@@ -589,21 +589,6 @@ export function FilesTab({ bucketName }: { bucketName: string }) {
             New folder
           </Button>
           <Button
-            variant="outline"
-            size="sm"
-            disabled={busy || !s3Ready}
-            onClick={() =>
-              setPresign({
-                key: `${prefix}index.html`,
-                method: canWrite ? 'PUT' : 'GET',
-              })
-            }
-            title={!s3Ready ? s3Error ?? undefined : 'Create a time-limited upload or download URL'}
-          >
-            <Link2 size={14} />
-            Signed URL
-          </Button>
-          <Button
             size="sm"
             disabled={busy || !canWrite || !s3Ready}
             onClick={() => fileInputRef.current?.click()}
