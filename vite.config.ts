@@ -12,6 +12,7 @@ const adminTarget = process.env.VITE_PROXY_TARGET
 const s3Target = process.env.VITE_S3_PROXY_TARGET
 
 export default defineConfig({
+  base: '/Cloodsy-S3-UI/',
   plugins: [react(), cloodsyDebugPlugin(), securityHeadersPlugin()],
   server: {
     proxy: {

@@ -8,16 +8,9 @@
       <stop stop-color="#93c5fd"/>
       <stop offset="1" stop-color="#2563eb"/>
     </linearGradient>
-    <style>
-      @media (prefers-color-scheme: dark) {
-        .bg { fill: #f4f4f5; }
-        .c { stroke: #18181b; }
-        .edge { stroke: #000; stroke-opacity: .08; }
-      }
-    </style>
   </defs>
-  <rect class="bg" width="32" height="32" rx="8" fill="url(#bg)"/>
-  <rect class="edge" x=".5" y=".5" width="31" height="31" rx="7.5" fill="none" stroke="#fff" stroke-opacity=".12"/>
-  <path class="c" d="M21.1 23.6A9.2 9.2 0 1 1 21.1 8.4" fill="none" stroke="#fafafa" stroke-width="4.4" stroke-linecap="round"/>
+  <rect width="32" height="32" rx="8" fill="url(#bg)"/>
+  <rect x=".5" y=".5" width="31" height="31" rx="7.5" fill="none" stroke="#fff" stroke-opacity=".12"/>
+  <path d="M21.1 23.6A9.2 9.2 0 1 1 21.1 8.4" fill="none" stroke="#fafafa" stroke-width="4.4" stroke-linecap="round"/>
   <rect x="18.2" y="11.8" width="8.2" height="8.2" rx="1.8" fill="url(#obj)"/>
 </svg>

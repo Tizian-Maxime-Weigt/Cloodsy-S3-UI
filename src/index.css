@@ -139,9 +139,19 @@ p {
 }
 
 .topbar__brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   font-weight: 600;
   font-size: 15px;
   letter-spacing: -0.2px;
+}
+
+.topbar__logo {
+  width: 22px;
+  height: 22px;
+  border-radius: 5px;
+  flex-shrink: 0;
 }
 
 .topbar__badge {

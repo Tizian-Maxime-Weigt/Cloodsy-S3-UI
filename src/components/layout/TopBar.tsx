@@ -19,7 +19,10 @@ export function TopBar({
   return (
     <header className="topbar">
       {left}
-      <div className="topbar__brand">{title}</div>
+      <div className="topbar__brand">
+        <img className="topbar__logo" src="/logo.svg" alt="" width={22} height={22} />
+        {title}
+      </div>
       {serverName ? <span className="topbar__badge">{serverName}</span> : null}
       <div className="topbar__spacer" />
       {right}
