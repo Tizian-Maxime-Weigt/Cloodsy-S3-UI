@@ -13,6 +13,11 @@ A standalone static web app for managing servers, buckets, objects, credentials,
 
 ---
 
+## Demo is aviable here:
+https://tizian-maxime-weigt.github.io/Cloodsy-S3-UI/
+
+The page is designed so that the data you enter is stored ONLY encrypted in your web browser.
+
 ## Features
 
 - **Multi-server** — Save, switch, edit, and remove Cloodsy S3 instances; optional S3 endpoint (otherwise derived from the Admin URL)
