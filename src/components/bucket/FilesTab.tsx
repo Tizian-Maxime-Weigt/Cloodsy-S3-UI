@@ -19,7 +19,7 @@ import {
   Trash2,
   Upload,
 } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react'
 import {
   VIEW_MAX_BYTES,
   blobForView,
@@ -44,6 +44,12 @@ import {
   type S3Session,
   type UploadProgress,
 } from '../../api/s3'
+import {
+  collectDroppedFiles,
+  dataTransferHasFiles,
+  filesFromList,
+  type DroppedFile,
+} from '../../lib/dropFiles'
 import {
   fileExtension,
   fileNameFromKey,
@@ -97,6 +103,7 @@ export function FilesTab({ bucketName }: { bucketName: string }) {
   const { activeServer } = useServers()
   const { toast } = useToast()
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const dragDepthRef = useRef(0)
   const [prefix, setPrefix] = useState('')
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [confirm, setConfirm] = useState<{
@@ -185,6 +192,18 @@ export function FilesTab({ bucketName }: { bucketName: string }) {
     setS3Ready(true)
     setS3Error(null)
   }, [activeServer, api.baseUrl, credentials])
+
+  useEffect(() => {
+    const preventNavigate = (e: globalThis.DragEvent) => {
+      if (dataTransferHasFiles(e.dataTransfer)) e.preventDefault()
+    }
+    window.addEventListener('dragover', preventNavigate)
+    window.addEventListener('drop', preventNavigate)
+    return () => {
+      window.removeEventListener('dragover', preventNavigate)
+      window.removeEventListener('drop', preventNavigate)
+    }
+  }, [])
 
   const objectPublicUrl = useCallback(
     (key: string) =>
@@ -345,21 +364,25 @@ export function FilesTab({ bucketName }: { bucketName: string }) {
     await refresh()
   }
 
-  const uploadFiles = async (files: FileList | File[]) => {
+  const resetDrag = () => {
+    dragDepthRef.current = 0
+    setDragOver(false)
+  }
+
+  const uploadFiles = async (items: DroppedFile[]) => {
     const client = requireWrite()
     if (!client) return
-    const list = Array.from(files)
-    if (!list.length) return
+    if (!items.length) return
     setBusy(true)
     let ok = 0
     try {
-      for (let i = 0; i < list.length; i++) {
-        const file = list[i]!
-        const key = `${prefix}${file.name}`
+      for (let i = 0; i < items.length; i++) {
+        const { file, relativePath } = items[i]!
+        const key = `${prefix}${relativePath}`
         setUpload({
-          name: file.name,
+          name: relativePath,
           index: i + 1,
-          total: list.length,
+          total: items.length,
           progress: { bytesSent: 0, bytesTotal: file.size },
         })
         await s3Upload(
@@ -367,12 +390,12 @@ export function FilesTab({ bucketName }: { bucketName: string }) {
           bucketName,
           key,
           file,
-          file.type || guessContentType(file.name),
+          file.type || guessContentType(relativePath),
           (progress) => {
             setUpload({
-              name: file.name,
+              name: relativePath,
               index: i + 1,
-              total: list.length,
+              total: items.length,
               progress,
             })
           },
@@ -380,7 +403,7 @@ export function FilesTab({ bucketName }: { bucketName: string }) {
         ok++
       }
       toast(
-        ok === 1 ? `Uploaded ${list[0]!.name}` : `Uploaded ${ok} files`,
+        ok === 1 ? `Uploaded ${items[0]!.relativePath}` : `Uploaded ${ok} files`,
         'success',
       )
       await refresh()
@@ -392,6 +415,63 @@ export function FilesTab({ bucketName }: { bucketName: string }) {
       setUpload(null)
       if (fileInputRef.current) fileInputRef.current.value = ''
     }
+  }
+
+  const onDragEnter = (e: DragEvent) => {
+    if (!dataTransferHasFiles(e.dataTransfer)) return
+    e.preventDefault()
+    e.stopPropagation()
+    dragDepthRef.current += 1
+    setDragOver(true)
+  }
+
+  const onDragOver = (e: DragEvent) => {
+    if (!dataTransferHasFiles(e.dataTransfer)) return
+    e.preventDefault()
+    e.stopPropagation()
+    e.dataTransfer.dropEffect = canWrite && !busy ? 'copy' : 'none'
+  }
+
+  const onDragLeave = (e: DragEvent) => {
+    if (!dataTransferHasFiles(e.dataTransfer)) return
+    e.preventDefault()
+    e.stopPropagation()
+    dragDepthRef.current -= 1
+    if (dragDepthRef.current <= 0) resetDrag()
+  }
+
+  const onDrop = (e: DragEvent) => {
+    if (!dataTransferHasFiles(e.dataTransfer)) return
+    e.preventDefault()
+    e.stopPropagation()
+    const dt = e.dataTransfer
+    resetDrag()
+    if (busy) {
+      toast('An upload is already in progress', 'error')
+      return
+    }
+    if (!canWrite) {
+      toast(
+        s3Ready
+          ? 'Read-only credential — create a read-write key in Credentials'
+          : s3Error || 'S3 access unavailable',
+        'error',
+      )
+      return
+    }
+    void (async () => {
+      try {
+        const dropped = await collectDroppedFiles(dt)
+        if (!dropped.length) {
+          toast('No files to upload', 'error')
+          return
+        }
+        await uploadFiles(dropped)
+      } catch (err) {
+        debugError('FilesTab drop error', err)
+        toast('Could not read dropped files', 'error')
+      }
+    })()
   }
 
   const downloadObject = async (obj: S3Object) => {
@@ -515,16 +595,10 @@ export function FilesTab({ bucketName }: { bucketName: string }) {
   return (
     <div
       className={`files-tab ${dragOver ? 'files-tab--drag' : ''}`}
-      onDragOver={(e) => {
-        e.preventDefault()
-        if (canWrite) setDragOver(true)
-      }}
-      onDragLeave={() => setDragOver(false)}
-      onDrop={(e) => {
-        e.preventDefault()
-        setDragOver(false)
-        if (e.dataTransfer.files?.length) void uploadFiles(e.dataTransfer.files)
-      }}
+      onDragEnter={onDragEnter}
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
     >
       <input
         ref={fileInputRef}
@@ -532,7 +606,7 @@ export function FilesTab({ bucketName }: { bucketName: string }) {
         multiple
         hidden
         onChange={(e) => {
-          if (e.target.files) void uploadFiles(e.target.files)
+          if (e.target.files) void uploadFiles(filesFromList(e.target.files))
         }}
       />
 
@@ -642,22 +716,28 @@ export function FilesTab({ bucketName }: { bucketName: string }) {
           <div className="spinner" />
         </div>
       ) : empty ? (
-        <EmptyState
-          title="Empty folder"
-          description={
-            canWrite && s3Ready
-              ? 'Upload files or create a folder to get started.'
-              : 'No objects in this prefix.'
-          }
-          action={
-            canWrite && s3Ready ? (
-              <Button onClick={() => fileInputRef.current?.click()}>
-                <Upload size={14} />
-                Upload files
-              </Button>
-            ) : undefined
-          }
-        />
+        canWrite && s3Ready ? (
+          <div
+            className="files-dropzone"
+            role="button"
+            tabIndex={0}
+            onClick={() => fileInputRef.current?.click()}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault()
+                fileInputRef.current?.click()
+              }
+            }}
+          >
+            <EmptyState
+              icon={Upload}
+              title="Drop files to upload"
+              description="Drop files or folders here, or click to choose files."
+            />
+          </div>
+        ) : (
+          <EmptyState title="Empty folder" description="No objects in this prefix." />
+        )
       ) : (
         <div className="table-wrap">
           <table className="table">
@@ -948,6 +1028,18 @@ export function FilesTab({ bucketName }: { bucketName: string }) {
           </>
         ) : null}
       </Dropdown>
+
+      {dragOver ? (
+        <div className="files-tab__drop-overlay" aria-hidden>
+          <Upload size={28} />
+          <span>{canWrite ? 'Drop files to upload' : 'Uploads disabled'}</span>
+          <p>
+            {canWrite
+              ? 'Folders keep their structure'
+              : 'Create a read-write credential to upload'}
+          </p>
+        </div>
+      ) : null}
     </div>
   )
 }

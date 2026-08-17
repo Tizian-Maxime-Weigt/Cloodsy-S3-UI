@@ -23,7 +23,7 @@ The page is designed so that the data you enter is stored ONLY encrypted in your
 - **Multi-server** — Save, switch, edit, and remove Cloodsy S3 instances; optional S3 endpoint (otherwise derived from the Admin URL)
 - **Dashboard** — Bucket cards or table, search, object/storage totals, and server version with update notices
 - **Bucket overview** — Object count, usage, quota meter, versioning, public-read, WebDAV, storage path, and public URL
-- **File browser** — Prefix navigation, drag-and-drop upload with live speed, download, rename, folders, bulk delete
+- **File browser** — Prefix navigation, drag-and-drop upload (files and folders) with live speed, download, rename, folders, bulk delete
 - **Previews** — Images, video, audio, PDF, and sandboxed HTML; inline edit for text files
 - **Presigned URLs** — Time-limited GET and PUT links without sharing credentials
 - **Credentials** — Per-bucket access keys with read-write or read-only permission; secret shown once, copy to clipboard
