@@ -4,6 +4,7 @@ on:
   push:
     branches: [main, master]
   pull_request:
+  workflow_dispatch:
 
 jobs:
   build:
@@ -18,28 +19,63 @@ jobs:
       - run: npm run audit
       - run: npm run lint
       - run: npm run build
+      - name: Setup Pages
+        if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+        uses: actions/configure-pages@v5
+      - name: Upload Pages artifact
+        if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: dist
 
   deploy:
-    if: github.ref == 'refs/heads/main'
+    # Legacy branch Pages and this job used to race: GitHub ran
+    # pages-build-deployment from main/, then deploy-pages hit a 503.
+    if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
     needs: build
     runs-on: ubuntu-latest
+    concurrency:
+      group: pages
+      cancel-in-progress: false
     permissions:
       contents: read
       pages: write
       id-token: write
     environment:
       name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+      url: ${{ steps.deployment_retry.outputs.page_url || steps.deployment.outputs.page_url }}
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
-        with:
-          node-version: '22'
-          cache: npm
-      - run: npm ci
-      - run: npm run build
-      - uses: actions/upload-pages-artifact@v5
-        with:
-          path: dist
-      - id: deployment
+      - name: Use GitHub Actions as Pages source
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          BT="$(gh api "repos/${GITHUB_REPOSITORY}/pages" --jq .build_type)"
+          if [ "$BT" != "workflow" ]; then
+            echo "Switching Pages build type from '${BT}' to workflow"
+            gh api -X PUT "repos/${GITHUB_REPOSITORY}/pages" -f build_type=workflow
+          else
+            echo "Pages already uses GitHub Actions"
+          fi
+          for i in $(seq 1 24); do
+            STATUS="$(gh api "repos/${GITHUB_REPOSITORY}/pages" --jq .status)"
+            echo "Pages status: ${STATUS}"
+            case "$STATUS" in
+              building|queued) sleep 5 ;;
+              *) break ;;
+            esac
+          done
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        continue-on-error: true
+        uses: actions/deploy-pages@v5
+
+      - name: Wait before retry
+        if: steps.deployment.outcome == 'failure'
+        run: sleep 20
+
+      - name: Retry deploy to GitHub Pages
+        id: deployment_retry
+        if: steps.deployment.outcome == 'failure'
         uses: actions/deploy-pages@v5

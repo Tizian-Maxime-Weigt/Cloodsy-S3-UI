@@ -16,6 +16,8 @@ A standalone static web app for managing servers, buckets, objects, credentials,
 ## Demo is available here:
 https://tizian-maxime-weigt.github.io/Cloodsy-S3-UI/
 
+Pushes to `main` deploy the Vite `dist/` via GitHub Actions. Pages source should be **GitHub Actions**, not “Deploy from a branch” (that serves the repo root and races the deploy job).
+
 The page is designed so that the data you enter is stored ONLY encrypted in your web browser.
 
 ## Features
