@@ -1573,7 +1573,7 @@ a.btn {
 
 .secret-row__label {
   flex-shrink: 0;
-  width: 72px;
+  width: 84px;
   font-size: 12px;
   color: var(--muted);
 }
