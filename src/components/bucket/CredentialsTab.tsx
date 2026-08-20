@@ -1,14 +1,51 @@
 import { Copy, Eye, EyeOff, Plus, Trash2 } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
+import { deriveS3Endpoint } from '../../api/s3'
+import { useAuth } from '../../store/auth'
 import { useBuckets } from '../../store/buckets'
+import { useServers } from '../../store/ServerStore'
 import { useToast } from '../../store/toast'
 import { CreateCredentialDialog } from '../dialogs/CreateCredentialDialog'
 import { Button } from '../ui/Button'
 import { EmptyState } from '../ui/EmptyState'
 import { ConfirmModal } from '../ui/Modal'
 
+function CopyRow({
+  label,
+  value,
+  display,
+  title,
+  onCopy,
+  extraActions,
+}: {
+  label: string
+  value: string
+  display?: ReactNode
+  title?: string
+  onCopy: () => void
+  extraActions?: ReactNode
+}) {
+  return (
+    <div className="secret-row">
+      <span className="secret-row__label">{label}</span>
+      <code className="mono" title={title ?? value}>
+        {display ?? value}
+      </code>
+      <div className="secret-row__actions">
+        {extraActions}
+        <Button variant="outline" size="sm" type="button" onClick={onCopy}>
+          <Copy size={14} />
+          Copy
+        </Button>
+      </div>
+    </div>
+  )
+}
+
 export function CredentialsTab({ bucketName }: { bucketName: string }) {
   const { credentials, fetchCredentials, createCredential, deleteCredential } = useBuckets()
+  const { activeServer } = useServers()
+  const { api } = useAuth()
   const { toast } = useToast()
   const [createOpen, setCreateOpen] = useState(false)
   const [visible, setVisible] = useState<Record<string, boolean>>({})
@@ -21,6 +58,9 @@ export function CredentialsTab({ bucketName }: { bucketName: string }) {
   useEffect(() => {
     void fetchCredentials(bucketName)
   }, [bucketName, fetchCredentials])
+
+  const adminUrl = activeServer?.url || api.baseUrl
+  const s3Endpoint = adminUrl ? deriveS3Endpoint(adminUrl, activeServer?.s3Url) : ''
 
   const copy = async (text: string, label: string) => {
     try {
@@ -40,6 +80,29 @@ export function CredentialsTab({ bucketName }: { bucketName: string }) {
           <Plus size={14} />
           Create
         </Button>
+      </div>
+
+      <div className="panel list-card">
+        <div className="list-card__header">
+          <strong>Connection</strong>
+        </div>
+        <CopyRow
+          label="URL"
+          value={s3Endpoint || '—'}
+          title={s3Endpoint || undefined}
+          onCopy={() => {
+            if (!s3Endpoint) {
+              toast('Set an S3 URL on the server first', 'error')
+              return
+            }
+            void copy(s3Endpoint, 'URL')
+          }}
+        />
+        <CopyRow
+          label="Bucket"
+          value={bucketName}
+          onCopy={() => void copy(bucketName, 'Bucket')}
+        />
       </div>
 
       {credentials.length === 0 ? (
@@ -62,30 +125,19 @@ export function CredentialsTab({ bucketName }: { bucketName: string }) {
                 <Trash2 size={14} />
               </button>
             </div>
-            <div className="secret-row">
-              <span className="secret-row__label">Access</span>
-              <code className="mono" title={c.accessKey}>
-                {c.accessKey}
-              </code>
-              <div className="secret-row__actions">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  type="button"
-                  onClick={() => void copy(c.accessKey, 'Access key')}
-                >
-                  <Copy size={14} />
-                  Copy
-                </Button>
-              </div>
-            </div>
+            <CopyRow
+              label="access-id"
+              value={c.accessKey}
+              onCopy={() => void copy(c.accessKey, 'access-id')}
+            />
             {c.secretKey ? (
-              <div className="secret-row">
-                <span className="secret-row__label">Secret</span>
-                <code className="mono" title={visible[c.accessKey] ? c.secretKey : undefined}>
-                  {visible[c.accessKey] ? c.secretKey : '••••••••••••••••'}
-                </code>
-                <div className="secret-row__actions">
+              <CopyRow
+                label="Secret"
+                value={c.secretKey}
+                title={visible[c.accessKey] ? c.secretKey : undefined}
+                display={visible[c.accessKey] ? c.secretKey : '••••••••••••••••'}
+                onCopy={() => void copy(c.secretKey!, 'Secret key')}
+                extraActions={
                   <button
                     className="btn-icon"
                     type="button"
@@ -96,17 +148,8 @@ export function CredentialsTab({ bucketName }: { bucketName: string }) {
                   >
                     {visible[c.accessKey] ? <EyeOff size={14} /> : <Eye size={14} />}
                   </button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    type="button"
-                    onClick={() => void copy(c.secretKey!, 'Secret key')}
-                  >
-                    <Copy size={14} />
-                    Copy
-                  </Button>
-                </div>
-              </div>
+                }
+              />
             ) : null}
           </div>
         ))
@@ -131,7 +174,7 @@ export function CredentialsTab({ bucketName }: { bucketName: string }) {
       <ConfirmModal
         open={!!deleteKey}
         title="Delete credential"
-        message={`Delete access key '${deleteKey}'?`}
+        message={`Delete access-id '${deleteKey}'?`}
         confirmLabel="Delete"
         danger
         onClose={() => setDeleteKey(null)}
@@ -148,7 +191,7 @@ export function CredentialsTab({ bucketName }: { bucketName: string }) {
         title="Secret key (shown once)"
         message={
           createdSecret
-            ? `Access: ${createdSecret.accessKey}\nSecret: ${createdSecret.secretKey}`
+            ? `access-id: ${createdSecret.accessKey}\nSecret: ${createdSecret.secretKey}`
             : ''
         }
         confirmLabel="Copy secret"
